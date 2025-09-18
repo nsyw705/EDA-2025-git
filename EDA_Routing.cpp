@@ -7,7 +7,7 @@
 #include <string>
 #include <cmath> 
 #include <ctime>
-using namespace std;
+using namespace std; //
 
 int** weight_matrix; //FPGA间的连接通道矩阵
 int** delta_weight_matrix; //FPGA间变动的通道数量矩阵
