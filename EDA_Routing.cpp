@@ -1,3 +1,10 @@
+ï»¿/*****************************************************************************************
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!æ³¨æ„!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ç®—ä¾‹ä¸­æ‰€æœ‰ç¼–å·éƒ½æ˜¯ä»¥1å¼€å§‹ï¼Œä¸ºæ–¹ä¾¿å¯¹åº”ï¼Œå½“å‰æ•°æ®ç»“æ„ç´¢å¼•ä¸º0çš„ä½ç½®å…¨éƒ¨ç©ºä½™ï¼Œæœ‰æ•ˆç´¢å¼•ä»1å¼€å§‹
+æ“ä½œæ—¶æ³¨æ„ï¼šç´¢å¼•å…¨éƒ¨ç”±1å¼€å§‹ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼ï¼
+*****************************************************************************************/
+
+
 #include <iostream>
 #include <stdlib.h>
 #include <fstream>
@@ -7,36 +14,431 @@
 #include <string>
 #include <cmath> 
 #include <ctime>
+#include <sstream>
 using namespace std;
 
-int** weight_matrix; //FPGA¼äµÄÁ¬½ÓÍ¨µÀ¾ØÕó
-int** delta_weight_matrix; //FPGA¼ä±ä¶¯µÄÍ¨µÀÊıÁ¿¾ØÕó
+#define MININT -2147483648
+#define MAXINT 2147483647
+#define RANDMAX 999
+#define SDF_MAX(a,b) ((a)>(b)?(a):(b))
+#define SDF_MIN(a,b) ((a)<(b)?(a):(b))
 
-int** nets_count_matrix; //¿çÔ½¸÷FPGAÖ®¼äÍ¨µÀµÄnetÊıÁ¿
+//***********************************************************//
+char* rep;
+char nameFinalResult[256];
+char nameSchedule[256];
+char cutname[256];
+//***********************************************************//
 
-int* FPGA_max_weight; //¸÷FPGA×î´ó¶ÔÍâµÄÁ¬½ÓÍ¨µÀÊıÁ¿
-int* FPGA_of_nodes; //¸÷Âß¼­½Úµã¶ÔÓ¦µÄFPGA±àºÅ
+char* caseName;
+char* designInfo;
+char* designNet;
+char* designTopo;
+char* designFpgaOut;
+int seed;
 
-double* net_delay; // Ã¿¸önetµÄÑÓÊ±
+int numFPGA; //FPGAæ•°é‡
+int numNet; //Netæ•°é‡
+int numNode; //é€»è¾‘èŠ‚ç‚¹æ•°é‡
 
-/*netµÄ½á¹¹Ìå*/
+int** weight_matrix; //FPGAé—´çš„è¿æ¥é€šé“çŸ©é˜µ
+int** delta_weight_matrix; //FPGAé—´å˜åŠ¨çš„é€šé“æ•°é‡çŸ©é˜µ
+
+int** nets_count_matrix; //è·¨è¶Šå„FPGAä¹‹é—´é€šé“çš„netæ•°é‡
+
+int* FPGA_max_weight; //å„FPGAæœ€å¤§å¯¹å¤–çš„è¿æ¥é€šé“æ•°é‡
+int* nodes_FPGA; //å„é€»è¾‘èŠ‚ç‚¹å¯¹åº”çš„FPGAç¼–å·
+int* length_FPGA_nodes; //å„FPGAå¯¹åº”çš„é€»è¾‘èŠ‚ç‚¹æ•°é‡
+int** FPGA_nodes; // å„FPGAå¯¹åº”çš„é€»è¾‘èŠ‚ç‚¹åˆ—è¡¨
+
+/*netçš„ç»“æ„ä½“*/
 typedef struct
 {
-    int source_node; //netµÄÆğµã
-    int sink_num; // netµÄÖÕµãÊıÁ¿
-    int* sink_nodes; //netµÄÖÕµã
+	int source_node; //netçš„èµ·ç‚¹
+	int sink_num; // netçš„ç»ˆç‚¹æ•°é‡
+	int* sink_nodes; //netçš„ç»ˆç‚¹
 
-    int*** path; //Â·¾¶£¬0-1ÈıÎ¬¾ØÕó£ºÆğµãµ½Ã¿¸öÖÕµãÑ¡ÔñµÄ±ß£¬µÚÒ»Î¬±ê¼ÇÖÕµãĞòºÅ£¬ºóÁ½Î¬¶ÈÊÇ0-1¾ØÕó±íÊ¾Ñ¡ÔñµÄ±ß
-    int** steiner_tree; //ËùÓĞÂ·¾¶¶ÔÓ¦µÄË¹Ì¹ÄÉÊ÷¹Ç¼Ü
+	int*** path; //è·¯å¾„ï¼Œ0-1ä¸‰ç»´çŸ©é˜µï¼šèµ·ç‚¹åˆ°æ¯ä¸ªç»ˆç‚¹é€‰æ‹©çš„è¾¹ï¼Œç¬¬ä¸€ç»´æ ‡è®°ç»ˆç‚¹åºå·ï¼Œåä¸¤ç»´åº¦æ˜¯0-1çŸ©é˜µè¡¨ç¤ºé€‰æ‹©çš„è¾¹
+	int** steiner_tree; //æ‰€æœ‰è·¯å¾„å¯¹åº”çš„æ–¯å¦çº³æ ‘éª¨æ¶
 
-    int* path_jump_count; //Ã¿ÌõÂ·¾¶Ìø¿çµÄFPGAÊıÁ¿
-    double* path_delay; //Ã¿ÌõÂ·¾¶µÄÑÓÊ±
+	int* path_jump_count; //æ¯æ¡è·¯å¾„è·³è·¨çš„FPGAæ•°é‡
+	double* path_delay; //æ¯æ¡è·¯å¾„çš„å»¶æ—¶
 
 }Net;
 
+Net* net_list; // æ‰€æœ‰netçš„æ•°ç»„
+double* net_delay; // æ¯ä¸ªnetçš„å»¶æ—¶
 
-int main()
+
+void read_instance()
 {
-    std::cout << "Hello World!\n";
+	char temp_caseName[50];
+	char designInfoName[50];
+	char designNetName[50];
+	char designTopoName[50];
+	char designFpgaOutName[50];
+
+	strcpy_s(temp_caseName, caseName);
+	strcat_s(temp_caseName, sizeof(temp_caseName), "/");
+	strcpy_s(designInfoName, temp_caseName);
+	strcpy_s(designNetName, temp_caseName);
+	strcpy_s(designTopoName, temp_caseName);
+	strcpy_s(designFpgaOutName, temp_caseName);
+
+	strcat_s(designInfoName, sizeof(designInfoName), designInfo);
+	strcat_s(designNetName, sizeof(designNetName), designNet);
+	strcat_s(designTopoName, sizeof(designTopoName), designTopo);
+	strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
+
+	ifstream FIC;
+	FIC.open(designInfoName);
+
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designInfoName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designInfoName << endl;
+	}
+	char str_reading[100];
+	numFPGA = 0;
+	while (!FIC.eof())
+	{
+		FIC >> str_reading;
+		numFPGA++;
+	}
+	numFPGA = numFPGA / 2;
+	FIC.close();
+
+
+	FPGA_max_weight = new int[numFPGA+1];
+	FIC.open(designInfoName);
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designInfoName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designInfoName << endl;
+	}
+
+	int FPGA_index = 1;
+	for (int x = 0; x < numFPGA * 2; x++)
+	{
+		FIC >> str_reading;
+		if (x % 2 != 0)
+		{
+			FPGA_max_weight[FPGA_index] = atoi(str_reading);
+			FPGA_index++;
+		}
+	}
+	FIC.close();
+
+	std::string net_line;
+	numNet = 0;
+	FIC.open(designNetName);
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designNetName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designNetName << endl;
+	}
+	while (std::getline(FIC, net_line))
+		numNet++;
+	FIC.close();
+
+	net_list = new Net[numNet];
+	net_delay = new double[numNet];
+	int net_index = 0;
+	int max_node_index = MININT;
+	FIC.open(designNetName);
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designNetName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designNetName << endl;
+	}
+	while (std::getline(FIC, net_line))
+	{
+		std::istringstream iss1(net_line);
+		std::istringstream iss2(net_line);
+		std::string token;
+		int sink_count = 0;
+		int token_count = 0;
+		while (iss1 >> token)
+		{
+			if (token[0] == 'g')
+				sink_count++;
+		}
+
+		if (net_index >= numNet)
+		{
+			cout << "net index over its total num!";
+			exit(-1);
+		}
+		net_delay[net_index] = (double)MAXINT;
+		net_list[net_index].sink_num = sink_count - 1;
+		int sink_total = net_list[net_index].sink_num;
+
+		net_list[net_index].sink_nodes = new int[sink_total];
+		net_list[net_index].path = new int** [sink_total];
+		for (int i = 0; i < sink_total; i++)
+		{
+			net_list[net_index].sink_nodes[i] = -1;
+			net_list[net_index].path[i] = new int* [numFPGA+1];
+			for (int x = 0; x < numFPGA+1; x++)
+			{
+				net_list[net_index].path[i][x] = new int[numFPGA+1];
+				for (int y = 0; y < numFPGA+1; y++)
+					net_list[net_index].path[i][x][y] = 0;
+			}
+
+		}
+		net_list[net_index].steiner_tree = new int* [numFPGA+1];
+		for (int x = 0; x < numFPGA+1; x++)
+		{
+			net_list[net_index].steiner_tree[x] = new int[numFPGA+1];
+			for (int y = 0; y < numFPGA+1; y++)
+				net_list[net_index].steiner_tree[x][y] = 0;
+		}
+		net_list[net_index].path_jump_count = new int[sink_total];
+		net_list[net_index].path_delay = new double[sink_total];
+
+		for (int i = 0; i < sink_total; i++)
+		{
+			net_list[net_index].path_jump_count[i] = 0;
+			net_list[net_index].path_delay[i] = 0;
+		}
+
+		sink_count = 0;
+		token_count = 0;
+		while (iss2 >> token)
+		{
+			if (token[0] == 'g')
+			{
+				if (token_count == 0)
+				{
+					net_list[net_index].source_node = std::stoi(token.substr(1));
+					token_count++;
+				}
+				else
+				{
+					if (sink_count < net_list[net_index].sink_num)
+					{
+						net_list[net_index].sink_nodes[sink_count] = std::stoi(token.substr(1));
+						if (net_list[net_index].sink_nodes[sink_count] > max_node_index)
+							max_node_index = net_list[net_index].sink_nodes[sink_count];
+						sink_count++;
+						token_count++;
+					}
+					else
+					{
+						cout << "net " << net_index << " sink " << sink_count << "over the actual number!";
+						exit(-1);
+					}
+
+				}
+			}
+
+		}
+
+		if (sink_count != net_list[net_index].sink_num)
+		{
+			cout << "sink node count error! should be " << net_list[net_index].sink_num << " actual " << sink_count;
+			exit(-1);
+		}
+		net_index++;
+	}
+
+	numNode = max_node_index;
+
+	FIC.close();
+
+
+	weight_matrix = new int* [numFPGA+1];
+	delta_weight_matrix = new int* [numFPGA+1];
+	nets_count_matrix = new int* [numFPGA+1];
+
+	for (int i = 0; i < numFPGA+1; i++)
+	{
+		weight_matrix[i] = new int[numFPGA+1];
+		delta_weight_matrix[i] = new int[numFPGA+1];
+		nets_count_matrix[i] = new int[numFPGA+1];
+		for (int j = 0; j < numFPGA+1; j++)
+		{
+			weight_matrix[i][j] = 0;
+			delta_weight_matrix[i][j] = 0;
+			nets_count_matrix[i][j] = 0;
+		}
+	}
+
+	std::string topo_line;
+	FIC.open(designTopoName);
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designTopoName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designTopoName << endl;
+	}
+
+	for (int i = 0; i < numFPGA; i++)
+	{
+		if (i == 0)
+			continue;
+		FIC >> topo_line;
+		FIC >> topo_line;
+		std::stringstream ss(topo_line);
+		std::string token;
+		int index = 1;
+		while (std::getline(ss, token, ','))
+		{
+			if (index < numFPGA)
+			{
+				weight_matrix[i][index] = std::stoi(token);
+				index++;
+			}
+		}
+		if (index != numFPGA)
+		{
+			cout << "weight_matrix size error! should be " << numFPGA << " actual " << index;
+			exit(-1);
+		}
+	}
+	FIC.close();
+
+
+	nodes_FPGA = new int[numNode+1]; 
+	for (int x = 0; x < numNode + 1; x++)
+		nodes_FPGA[x] = 0;
+
+	length_FPGA_nodes = new int[numFPGA+1];
+	FPGA_nodes = new int*[numFPGA+1]; 
+	for (int i = 0; i < numFPGA+1; i++)
+	{
+		length_FPGA_nodes[i] = 0;
+		FPGA_nodes[i] = new int[numNode+1];
+		for (int j = 0; j < numNode+1; j++)
+			FPGA_nodes[i][j] = -1;
+	}
+
+
+	std::string fpga_out_line;
+	FIC.open(designFpgaOutName);
+	if (FIC.fail())
+	{
+		cout << "1-can not open the file " << designFpgaOutName << endl;
+		exit(0);
+	}
+	if (FIC.eof())
+	{
+		cout << "2-can not open the file " << designFpgaOutName << endl;
+	}
+	
+	int fpga_index = 1;
+	while (std::getline(FIC, fpga_out_line))
+	{
+		std::istringstream iss(fpga_out_line);
+		std::string token;
+		int nodes_count = 1;
+		while (iss >> token)
+		{
+			if (token[0] == 'g' && fpga_index < numFPGA+1 && nodes_count< numNode + 1)
+			{
+				FPGA_nodes[fpga_index][nodes_count] = std::stoi(token.substr(1));
+				if(FPGA_nodes[fpga_index][nodes_count] < numNode+1)
+					nodes_FPGA[FPGA_nodes[fpga_index][nodes_count]] = fpga_index;
+				nodes_count++;
+			}
+		}
+		if(fpga_index < numFPGA + 1)
+			length_FPGA_nodes[fpga_index] = nodes_count-1;
+
+		fpga_index++;
+	}
+
+
+	FIC.close();
+
+	cout << "Successfully read and load all the data!" << endl;
+
 }
 
+
+int main(int argc, char** argv)
+{
+	if (argc == 7)
+	{
+		/*å‘½ä»¤è¡Œå‚æ•°è¾“å…¥é¡ºåº*/
+		caseName = argv[1]; //caseæ–‡ä»¶å¤¹åå­—
+		designInfo = argv[2]; // design.info
+		designNet = argv[3]; // design.net
+		designTopo = argv[4]; //design.topo
+		designFpgaOut = argv[5]; //design.fpga.out
+		seed = atoi(argv[6]); // éšæœºæ•°ç§å­
+		rep = argv[6];
+	}
+	else
+	{
+		cout << "Enter some parameters to run the program: " << endl;
+		cout << "<instance file name>  <seed>" << endl;
+		exit(0);
+	}
+
+
+	srand(seed);
+	read_instance();
+
+
+	delete[] FPGA_max_weight;
+
+	for (int i = 0; i < numNet; i++)
+	{
+		for (int x = 0; x < net_list[i].sink_num; x++)
+		{
+			for (int y = 0; y < numFPGA+1; y++)
+				delete[] net_list[i].path[x][y];
+			delete[] net_list[i].path[x];
+		}
+		delete[] net_list[i].path;
+
+		for (int x = 0; x < numFPGA+1; x++)
+			delete[] net_list[i].steiner_tree[x];
+		delete[] net_list[i].steiner_tree;
+
+
+		delete[] net_list[i].sink_nodes;
+		delete[] net_list[i].path_jump_count;
+		delete[] net_list[i].path_delay;
+	}
+
+	delete[] net_list;
+	delete[] net_delay;
+
+
+	for (int x = 0; x < numFPGA+1; x++)
+	{
+		delete[] weight_matrix[x];
+		delete[] delta_weight_matrix[x];
+		delete[] nets_count_matrix[x];
+		delete[] FPGA_nodes[x];
+	}
+	delete[] weight_matrix;
+	delete[] delta_weight_matrix;
+	delete[] nets_count_matrix;
+
+	delete[] FPGA_nodes;
+	delete[] nodes_FPGA;
+	delete[] length_FPGA_nodes;
+}
