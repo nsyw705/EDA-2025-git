@@ -15,6 +15,10 @@
 #include <cmath> 
 #include <ctime>
 #include <sstream>
+#include <vector>
+#include <unordered_set>
+#include <utility> 
+#include <functional> 
 using namespace std;
 
 #define MININT -2147483648
@@ -51,22 +55,31 @@ int* nodes_FPGA; //各逻辑节点对应的FPGA编号
 int* length_FPGA_nodes; //各FPGA对应的逻辑节点数量
 int** FPGA_nodes; // 各FPGA对应的逻辑节点列表
 
+
+struct PairHash
+{
+	size_t operator()(const std::pair<int, int>& p) const noexcept
+	{
+		// 常见的组合哈希写法：避免简单拼接带来的冲突
+		return std::hash<int>{}(p.first) ^ (std::hash<int>{}(p.second) << 1);
+	}
+};
+
 /*net的结构体*/
 typedef struct
 {
 	int source_node; //net的起点
 	int sink_num; // net的终点数量
-	int* sink_nodes; //net的终点
-
-	int*** path; //路径，0-1三维矩阵：起点到每个终点选择的边，第一维标记终点序号，后两维度是0-1矩阵表示选择的边
-	int** steiner_tree; //所有路径对应的斯坦纳树骨架
-
-	int* path_jump_count; //每条路径跳跨的FPGA数量
-	double* path_delay; //每条路径的延时
+	vector<int> sink_nodes; //net的终点
+	vector<pair<int, int>> available_edges; // net中节点可用的边（即存在连接线，可使用的边）
+	vector<vector<pair<int, int>>> path; //路径，0-1三维矩阵：起点到每个终点选择的边，第一维标记终点序号，后两维度是0-1矩阵表示选择的边
+	unordered_set<pair<int, int>, PairHash> steiner_tree; //所有路径对应的斯坦纳树骨架
+	vector<int> path_jump_count; //每条路径跳跨的FPGA数量
+	vector<double> path_delay; //每条路径的延时
 
 }Net;
 
-Net* net_list; // 所有net的数组
+vector<Net> net_list; // 所有net的数组
 double* net_delay; // 每个net的延时
 
 
@@ -113,7 +126,7 @@ void read_instance()
 	FIC.close();
 
 
-	FPGA_max_weight = new int[numFPGA+1];
+	FPGA_max_weight = new int[numFPGA + 1];
 	FIC.open(designInfoName);
 	if (FIC.fail())
 	{
@@ -139,22 +152,6 @@ void read_instance()
 
 	std::string net_line;
 	numNet = 0;
-	FIC.open(designNetName);
-	if (FIC.fail())
-	{
-		cout << "1-can not open the file " << designNetName << endl;
-		exit(0);
-	}
-	if (FIC.eof())
-	{
-		cout << "2-can not open the file " << designNetName << endl;
-	}
-	while (std::getline(FIC, net_line))
-		numNet++;
-	FIC.close();
-
-	net_list = new Net[numNet];
-	net_delay = new double[numNet];
 	int net_index = 0;
 	int max_node_index = MININT;
 	FIC.open(designNetName);
@@ -167,113 +164,58 @@ void read_instance()
 	{
 		cout << "2-can not open the file " << designNetName << endl;
 	}
+
 	while (std::getline(FIC, net_line))
 	{
-		std::istringstream iss1(net_line);
-		std::istringstream iss2(net_line);
+		Net read_net;
+		std::istringstream iss(net_line);
 		std::string token;
-		int sink_count = 0;
+		int node_count = 0;
 		int token_count = 0;
-		while (iss1 >> token)
-		{
-			if (token[0] == 'g')
-				sink_count++;
-		}
-
-		if (net_index >= numNet)
-		{
-			cout << "net index over its total num!";
-			exit(-1);
-		}
-		net_delay[net_index] = (double)MAXINT;
-		net_list[net_index].sink_num = sink_count - 1;
-		int sink_total = net_list[net_index].sink_num;
-
-		net_list[net_index].sink_nodes = new int[sink_total];
-		net_list[net_index].path = new int** [sink_total];
-		for (int i = 0; i < sink_total; i++)
-		{
-			net_list[net_index].sink_nodes[i] = -1;
-			net_list[net_index].path[i] = new int* [numFPGA+1];
-			for (int x = 0; x < numFPGA+1; x++)
-			{
-				net_list[net_index].path[i][x] = new int[numFPGA+1];
-				for (int y = 0; y < numFPGA+1; y++)
-					net_list[net_index].path[i][x][y] = 0;
-			}
-
-		}
-		net_list[net_index].steiner_tree = new int* [numFPGA+1];
-		for (int x = 0; x < numFPGA+1; x++)
-		{
-			net_list[net_index].steiner_tree[x] = new int[numFPGA+1];
-			for (int y = 0; y < numFPGA+1; y++)
-				net_list[net_index].steiner_tree[x][y] = 0;
-		}
-		net_list[net_index].path_jump_count = new int[sink_total];
-		net_list[net_index].path_delay = new double[sink_total];
-
-		for (int i = 0; i < sink_total; i++)
-		{
-			net_list[net_index].path_jump_count[i] = 0;
-			net_list[net_index].path_delay[i] = 0;
-		}
-
-		sink_count = 0;
-		token_count = 0;
-		while (iss2 >> token)
+		int sink_count = 0;
+		while (iss >> token)
 		{
 			if (token[0] == 'g')
 			{
 				if (token_count == 0)
 				{
-					net_list[net_index].source_node = std::stoi(token.substr(1));
+					read_net.source_node = std::stoi(token.substr(1));
+					if (read_net.source_node > max_node_index)
+						max_node_index = read_net.source_node;
 					token_count++;
 				}
 				else
 				{
-					if (sink_count < net_list[net_index].sink_num)
-					{
-						net_list[net_index].sink_nodes[sink_count] = std::stoi(token.substr(1));
-						if (net_list[net_index].sink_nodes[sink_count] > max_node_index)
-							max_node_index = net_list[net_index].sink_nodes[sink_count];
-						sink_count++;
-						token_count++;
-					}
-					else
-					{
-						cout << "net " << net_index << " sink " << sink_count << "over the actual number!";
-						exit(-1);
-					}
-
+					read_net.sink_nodes.push_back(std::stoi(token.substr(1)));
+					if (std::stoi(token.substr(1)) > max_node_index)
+						max_node_index = std::stoi(token.substr(1));
+					sink_count++;
+					token_count++;
 				}
 			}
 
 		}
-
-		if (sink_count != net_list[net_index].sink_num)
-		{
-			cout << "sink node count error! should be " << net_list[net_index].sink_num << " actual " << sink_count;
-			exit(-1);
-		}
-		net_index++;
+		read_net.sink_num = (int)read_net.sink_nodes.size();
+		net_list.push_back(read_net);
+		numNet++;
 	}
 
+	net_delay = new double[numNet];
+	for (int x = 0; x < numNet; x++)
+		net_delay[x] = (double)MAXINT;
 	numNode = max_node_index;
-
 	FIC.close();
 
+	weight_matrix = new int* [numFPGA + 1];
+	delta_weight_matrix = new int* [numFPGA + 1];
+	nets_count_matrix = new int* [numFPGA + 1];
 
-	weight_matrix = new int* [numFPGA+1];
-	delta_weight_matrix = new int* [numFPGA+1];
-	nets_count_matrix = new int* [numFPGA+1];
-
-	for (int i = 0; i < numFPGA+1; i++)
+	for (int i = 0; i < numFPGA + 1; i++)
 	{
-		weight_matrix[i] = new int[numFPGA+1];
-		delta_weight_matrix[i] = new int[numFPGA+1];
-		nets_count_matrix[i] = new int[numFPGA+1];
-		for (int j = 0; j < numFPGA+1; j++)
+		weight_matrix[i] = new int[numFPGA + 1];
+		delta_weight_matrix[i] = new int[numFPGA + 1];
+		nets_count_matrix[i] = new int[numFPGA + 1];
+		for (int j = 0; j < numFPGA + 1; j++)
 		{
 			weight_matrix[i][j] = 0;
 			delta_weight_matrix[i][j] = 0;
@@ -319,17 +261,17 @@ void read_instance()
 	FIC.close();
 
 
-	nodes_FPGA = new int[numNode+1]; 
+	nodes_FPGA = new int[numNode + 1];
 	for (int x = 0; x < numNode + 1; x++)
 		nodes_FPGA[x] = 0;
 
-	length_FPGA_nodes = new int[numFPGA+1];
-	FPGA_nodes = new int*[numFPGA+1]; 
-	for (int i = 0; i < numFPGA+1; i++)
+	length_FPGA_nodes = new int[numFPGA + 1];
+	FPGA_nodes = new int* [numFPGA + 1];
+	for (int i = 0; i < numFPGA + 1; i++)
 	{
 		length_FPGA_nodes[i] = 0;
-		FPGA_nodes[i] = new int[numNode+1];
-		for (int j = 0; j < numNode+1; j++)
+		FPGA_nodes[i] = new int[numNode + 1];
+		for (int j = 0; j < numNode + 1; j++)
 			FPGA_nodes[i][j] = -1;
 	}
 
@@ -345,7 +287,7 @@ void read_instance()
 	{
 		cout << "2-can not open the file " << designFpgaOutName << endl;
 	}
-	
+
 	int fpga_index = 1;
 	while (std::getline(FIC, fpga_out_line))
 	{
@@ -354,22 +296,37 @@ void read_instance()
 		int nodes_count = 1;
 		while (iss >> token)
 		{
-			if (token[0] == 'g' && fpga_index < numFPGA+1 && nodes_count< numNode + 1)
+			if (token[0] == 'g' && fpga_index < numFPGA + 1 && nodes_count < numNode + 1)
 			{
 				FPGA_nodes[fpga_index][nodes_count] = std::stoi(token.substr(1));
-				if(FPGA_nodes[fpga_index][nodes_count] < numNode+1)
+				if (FPGA_nodes[fpga_index][nodes_count] < numNode + 1)
 					nodes_FPGA[FPGA_nodes[fpga_index][nodes_count]] = fpga_index;
 				nodes_count++;
 			}
 		}
-		if(fpga_index < numFPGA + 1)
-			length_FPGA_nodes[fpga_index] = nodes_count-1;
+		if (fpga_index < numFPGA + 1)
+			length_FPGA_nodes[fpga_index] = nodes_count - 1;
 
 		fpga_index++;
 	}
 
 
 	FIC.close();
+
+
+	for (int x = 0; x < net_list.size(); x++)
+	{
+		for (int y = 0; y < net_list[x].sink_nodes.size(); y++)
+		{
+			int soure_FPGA = nodes_FPGA[net_list[x].source_node];
+			int sink_FPGA = nodes_FPGA[net_list[x].sink_nodes[y]];
+			if (weight_matrix[soure_FPGA][sink_FPGA] > 0)
+			{
+				net_list[x].available_edges.push_back(make_pair(soure_FPGA, sink_FPGA));
+				net_list[x].available_edges.push_back(make_pair(sink_FPGA, soure_FPGA));
+			}
+		}
+	}
 
 	cout << "Successfully read and load all the data!" << endl;
 
@@ -403,31 +360,10 @@ int main(int argc, char** argv)
 
 	delete[] FPGA_max_weight;
 
-	for (int i = 0; i < numNet; i++)
-	{
-		for (int x = 0; x < net_list[i].sink_num; x++)
-		{
-			for (int y = 0; y < numFPGA+1; y++)
-				delete[] net_list[i].path[x][y];
-			delete[] net_list[i].path[x];
-		}
-		delete[] net_list[i].path;
-
-		for (int x = 0; x < numFPGA+1; x++)
-			delete[] net_list[i].steiner_tree[x];
-		delete[] net_list[i].steiner_tree;
-
-
-		delete[] net_list[i].sink_nodes;
-		delete[] net_list[i].path_jump_count;
-		delete[] net_list[i].path_delay;
-	}
-
-	delete[] net_list;
 	delete[] net_delay;
 
 
-	for (int x = 0; x < numFPGA+1; x++)
+	for (int x = 0; x < numFPGA + 1; x++)
 	{
 		delete[] weight_matrix[x];
 		delete[] delta_weight_matrix[x];
