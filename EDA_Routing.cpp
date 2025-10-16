@@ -78,7 +78,6 @@ typedef struct
 	vector<double> path_delay; //每条路径的延时
 
 }Net;
-
 vector<Net> net_list; // 所有net的数组
 double* net_delay; // 每个net的延时
 
@@ -235,7 +234,7 @@ void read_instance()
 		cout << "2-can not open the file " << designTopoName << endl;
 	}
 
-	for (int i = 0; i < numFPGA; i++)
+	for (int i = 0; i <= numFPGA; i++)
 	{
 		if (i == 0)
 			continue;
@@ -246,13 +245,13 @@ void read_instance()
 		int index = 1;
 		while (std::getline(ss, token, ','))
 		{
-			if (index < numFPGA)
+			if (index <= numFPGA)
 			{
 				weight_matrix[i][index] = std::stoi(token);
 				index++;
 			}
 		}
-		if (index != numFPGA)
+		if (index != numFPGA+1)
 		{
 			cout << "weight_matrix size error! should be " << numFPGA << " actual " << index;
 			exit(-1);
@@ -332,6 +331,9 @@ void read_instance()
 
 }
 
+void ge_su_dp(){
+
+}
 
 int main(int argc, char** argv)
 {
@@ -356,7 +358,37 @@ int main(int argc, char** argv)
 
 	srand(seed);
 	read_instance();
+	cout<<numFPGA<<' '<<numNet<<' '<<numNode<<endl;
+	// int **weight_matrix;	   // FPGA间的连接通道矩阵
+	// int **delta_weight_matrix; // FPGA间变动的通道数量矩阵
 
+	// int **nets_count_matrix; // 跨越各FPGA之间通道的net数量
+
+	// int *FPGA_max_weight;	// 各FPGA最大对外的连接通道数量
+	// int *nodes_FPGA;		// 各逻辑节点对应的FPGA编号
+	// int *length_FPGA_nodes; // 各FPGA对应的逻辑节点数量
+	// int **FPGA_nodes;		// 各FPGA对应的逻辑节点列表
+	cout << "FPGA_max_weight: "; 
+	for (int i = 1; i <= numFPGA; i++) { cout << FPGA_max_weight[i] << ' '; } cout << endl;
+	cout<<"weight_matrix: "<<endl;
+	for(int i=1;i<=numFPGA;i++){for(int j=1;j<=numFPGA;j++){cout<<weight_matrix[i][j]<<' ';}cout<<endl;}
+	cout<<"delta_weight_matrix:"<<endl;
+	for (int i = 1; i <= numFPGA; i++){for (int j = 1; j <= numFPGA; j++){cout << delta_weight_matrix[i][j] << ' ';}cout << endl;}
+	cout<<"nets_count_matrix: "<<endl;
+	for (int i = 1; i <= numFPGA; i++){	for (int j = 1; j <= numFPGA; j++){	cout << nets_count_matrix[i][j] << ' ';}cout << endl;}
+	cout<<"nodes_FPGA: ";
+	for(int i=1;i<=numNode;i++){cout<<nodes_FPGA[i]<<' ';}cout<<endl;
+	cout<<"length_FPGA_nodes: ";
+	for (int i = 1; i <= numFPGA; i++){cout << length_FPGA_nodes[i] << ' ';}cout << endl;
+	cout << "FPGA_nodes: "<<endl;
+	for (int i = 1; i <= numFPGA; i++)
+	{
+		for (int j = 1; j <= length_FPGA_nodes[i]; j++)
+		{
+			cout << FPGA_nodes[i][j] << ' ';
+		}
+		cout << endl;
+	}
 
 	delete[] FPGA_max_weight;
 
