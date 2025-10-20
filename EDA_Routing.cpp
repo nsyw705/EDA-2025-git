@@ -462,12 +462,19 @@ void ge_su_dp(){//初始化
 		auto& net=net_list[n];
 		multi_dijkstra(net.source_node, net.sink_nodes, net.path);
 		// 更新累计使用次数
+		unordered_set<pair<int, int>, PairHash> used_pairs;
 		for (auto &edges : net.path){
 			for (auto &e : edges){
 				int u = e.first, v = e.second;
-				nets_count_matrix[u][v] += 1;
-				nets_count_matrix[v][u] += 1;
+				if(u>v){used_pairs.insert({v,u});}
+				else{used_pairs.insert({u, v});}
 			}
+		}
+		for ( auto &p : used_pairs)
+		{
+			int a = p.first, b = p.second;
+			++nets_count_matrix[a][b];
+			++nets_count_matrix[b][a];
 		}
 	}
 }
@@ -494,16 +501,16 @@ void file()//输出design.route.out
 	std::ofstream out("design.route.out", std::ios::out);
 	if (!out.is_open())
 		return;
-	vector<int> order(numNet);
-	iota(order.begin(), order.end(), 0);
-	stable_sort(order.begin(), order.end(),
+	vector<int> order1(numNet);
+	iota(order1.begin(), order1.end(), 0);
+	stable_sort(order1.begin(), order1.end(),
 					 [](int a, int b)
 					 { return net_delay[a] > net_delay[b]; });
 
 	out.setf(std::ios::fixed);
 	out << std::setprecision(1);
 
-	for (int idx : order)
+	for (int idx : order1)
 	{
 		if (net_delay[idx] <= 0.0)
 			continue;
@@ -512,8 +519,13 @@ void file()//输出design.route.out
 		auto &pdelay = net_list[idx].path_delay;
 
 		bool printed_header = false;
+		vector<int> order2(pdelay.size());
+		iota(order2.begin(), order2.end(), 0);
+		stable_sort(order2.begin(), order2.end(),
+					[idx](int a, int b)
+					{ return net_list[idx].path_delay[a] > net_list[idx].path_delay[b]; });
 
-		for (int j = 0; j < paths.size() && j < pdelay.size(); j++)
+		for (int j:order2)
 		{
 			if (pdelay[j] <= 0.0)
 				continue;
@@ -563,6 +575,15 @@ int main(int argc, char** argv)
 	calculate_su();
 	file();
 	cout << endl;
+	cout << "nets_count_matrix: " << endl;
+	for (int i = 1; i <= numFPGA; i++)
+	{
+		for (int j = 1; j <= numFPGA; j++)
+		{
+			cout << nets_count_matrix[i][j] << ' ';
+		}
+		cout << endl;
+	}
 
 	cout<<"search is done!"<<endl;
 
