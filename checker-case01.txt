@@ -1,0 +1,30 @@
+There is no new topo file
+Check FPGA channel capacity constraint
+All FPGA channel capacity satisfies the constraint
+Total number of connection is: 4.0
+
+Check channel reconfiguration scope constraint
+Detail info of changing connections :
+Number of changing connections of FPGA F1 is: 0
+Number of changing connections of FPGA F2 is: 0
+Number of changing connections of FPGA F3 is: 0
+Number of changing connections of FPGA F4 is: 0
+Total number of changing connections: 0.0
+The variation in connection channels satisfies the constraints
+
+Check the max ratio constraints:
+FPGA pair (1, 2): 2 nets
+FPGA pair (1, 2) has 1 connections, limit is 512!
+FPGA pair (1, 4): 2 nets
+FPGA pair (1, 4) has 1 connections, limit is 512!
+FPGA pair (2, 3): 5 nets
+FPGA pair (2, 3) has 1 connections, limit is 512!
+FPGA pair (3, 4): 4 nets
+FPGA pair (3, 4) has 1 connections, limit is 512!
+All FPGA pairs are within the net limit.
+
+Check whether all nets have routed
+All nets has routed
+
+Calculate the score of max delay: 
+Score of max delay =  71.2
