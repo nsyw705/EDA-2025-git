@@ -1,0 +1,16 @@
+1. 数据结构：Net结构体引入unordered_map，用于记录每个net中选择的边及其对应被选中次数，相当于python里的字典，键是pair表示边，值是该边被选次数。
+                      此改动方便重新计算跨各通道的net数量，初始化相应部分已经改好；
+
+2. 变量，原变量net_list改为"Current"（对应部分已经改好），用于存储当前搜索中改变的解。另外新引入一个Net型vector Global，用于记录搜索过程中找到的最优解，
+    当Current较之前被改进时，可调用	copy_solution(Global,Current);  将Current的结果更新给Global；
+
+3. void single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M , double& delay_value)是单条路径的dijkstra函数，
+   输入变量按顺序依次是：起点的fpga(注意不是node)，终点的fpga (注意不是node)，计算权重依据的跨通道net数量矩阵（不同路线对应的矩阵可能不同），新路线的延时值；
+
+4. 束搜索中每层保留的个数我使用#define BEAMWIDTH 3做了宏定义，值可以在这里改；
+
+5. 我写到re_shecdule_path函数里，注释 ”(2)递归进行束搜索扩展，生成Top-K候选路径 “后的部分，没有写完（其中expand_beam_layer函数还没有写完）。
+    所以(2)和(3)的内容，包括expand_beam_layer函数，可以根据你们的思路重新写。
+    我自己的思路大致和那个图一致，首先在第一层保留3个后继，作为三条最好路径的开端（即直接与net里的source相连的第一个点），往后每层只从top k节点里以随机/贪婪保留一个。
+    以上只是个人思路，可以不用，直接重写。
+    编程难度上，我觉得递归更好写，可以参考。
