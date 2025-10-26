@@ -1,0 +1,331 @@
+(base) junhao@xzg-Super-Server:~/Projects/EDA-2025-git/data_case$ ./checker ./case03
+There is no new topo file
+Check FPGA channel capacity constraint
+All FPGA channel capacity satisfies the constraint
+Total number of connection is: 140.0
+
+Check channel reconfiguration scope constraint
+Detail info of changing connections :
+Number of changing connections of FPGA F1 is: 0
+Number of changing connections of FPGA F2 is: 0
+Number of changing connections of FPGA F3 is: 0
+Number of changing connections of FPGA F4 is: 0
+Number of changing connections of FPGA F5 is: 0
+Number of changing connections of FPGA F6 is: 0
+Number of changing connections of FPGA F7 is: 0
+Number of changing connections of FPGA F8 is: 0
+Number of changing connections of FPGA F9 is: 0
+Number of changing connections of FPGA F10 is: 0
+Number of changing connections of FPGA F11 is: 0
+Number of changing connections of FPGA F12 is: 0
+Number of changing connections of FPGA F13 is: 0
+Number of changing connections of FPGA F14 is: 0
+Number of changing connections of FPGA F15 is: 0
+Number of changing connections of FPGA F16 is: 0
+Number of changing connections of FPGA F17 is: 0
+Number of changing connections of FPGA F18 is: 0
+Number of changing connections of FPGA F19 is: 0
+Number of changing connections of FPGA F20 is: 0
+Number of changing connections of FPGA F21 is: 0
+Number of changing connections of FPGA F22 is: 0
+Number of changing connections of FPGA F23 is: 0
+Number of changing connections of FPGA F24 is: 0
+Number of changing connections of FPGA F25 is: 0
+Number of changing connections of FPGA F26 is: 0
+Number of changing connections of FPGA F27 is: 0
+Number of changing connections of FPGA F28 is: 0
+Number of changing connections of FPGA F29 is: 0
+Number of changing connections of FPGA F30 is: 0
+Number of changing connections of FPGA F31 is: 0
+Number of changing connections of FPGA F32 is: 0
+Total number of changing connections: 0.0
+The variation in connection channels satisfies the constraints
+
+Check the max ratio constraints:
+FPGA pair (1, 2): 58 nets
+FPGA pair (1, 2) has 1 connections, limit is 512!
+FPGA pair (1, 3): 105 nets
+FPGA pair (1, 3) has 1 connections, limit is 512!
+FPGA pair (1, 5): 120 nets
+FPGA pair (1, 5) has 1 connections, limit is 512!
+FPGA pair (1, 7): 88 nets
+FPGA pair (1, 7) has 1 connections, limit is 512!
+FPGA pair (1, 8): 64 nets
+FPGA pair (1, 8) has 1 connections, limit is 512!
+FPGA pair (1, 9): 204 nets
+FPGA pair (1, 9) has 1 connections, limit is 512!
+FPGA pair (1, 10): 199 nets
+FPGA pair (1, 10) has 1 connections, limit is 512!
+FPGA pair (1, 16): 163 nets
+FPGA pair (1, 16) has 1 connections, limit is 512!
+FPGA pair (2, 3): 76 nets
+FPGA pair (2, 3) has 1 connections, limit is 512!
+FPGA pair (2, 4): 65 nets
+FPGA pair (2, 4) has 1 connections, limit is 512!
+FPGA pair (2, 6): 71 nets
+FPGA pair (2, 6) has 1 connections, limit is 512!
+FPGA pair (2, 8): 65 nets
+FPGA pair (2, 8) has 1 connections, limit is 512!
+FPGA pair (2, 9): 141 nets
+FPGA pair (2, 9) has 1 connections, limit is 512!
+FPGA pair (2, 10): 105 nets
+FPGA pair (2, 10) has 1 connections, limit is 512!
+FPGA pair (2, 11): 160 nets
+FPGA pair (2, 11) has 1 connections, limit is 512!
+FPGA pair (3, 4): 51 nets
+FPGA pair (3, 4) has 1 connections, limit is 512!
+FPGA pair (3, 5): 56 nets
+FPGA pair (3, 5) has 1 connections, limit is 512!
+FPGA pair (3, 7): 118 nets
+FPGA pair (3, 7) has 1 connections, limit is 512!
+FPGA pair (3, 10): 152 nets
+FPGA pair (3, 10) has 1 connections, limit is 512!
+FPGA pair (3, 11): 146 nets
+FPGA pair (3, 11) has 1 connections, limit is 512!
+FPGA pair (3, 12): 165 nets
+FPGA pair (3, 12) has 1 connections, limit is 512!
+FPGA pair (4, 5): 76 nets
+FPGA pair (4, 5) has 1 connections, limit is 512!
+FPGA pair (4, 6): 82 nets
+FPGA pair (4, 6) has 1 connections, limit is 512!
+FPGA pair (4, 8): 100 nets
+FPGA pair (4, 8) has 1 connections, limit is 512!
+FPGA pair (4, 11): 146 nets
+FPGA pair (4, 11) has 1 connections, limit is 512!
+FPGA pair (4, 12): 185 nets
+FPGA pair (4, 12) has 1 connections, limit is 512!
+FPGA pair (4, 13): 219 nets
+FPGA pair (4, 13) has 1 connections, limit is 512!
+FPGA pair (5, 6): 76 nets
+FPGA pair (5, 6) has 1 connections, limit is 512!
+FPGA pair (5, 7): 146 nets
+FPGA pair (5, 7) has 1 connections, limit is 512!
+FPGA pair (5, 12): 196 nets
+FPGA pair (5, 12) has 1 connections, limit is 512!
+FPGA pair (5, 13): 252 nets
+FPGA pair (5, 13) has 1 connections, limit is 512!
+FPGA pair (5, 14): 194 nets
+FPGA pair (5, 14) has 1 connections, limit is 512!
+FPGA pair (6, 7): 34 nets
+FPGA pair (6, 7) has 1 connections, limit is 512!
+FPGA pair (6, 8): 58 nets
+FPGA pair (6, 8) has 1 connections, limit is 512!
+FPGA pair (6, 13): 208 nets
+FPGA pair (6, 13) has 1 connections, limit is 512!
+FPGA pair (6, 14): 192 nets
+FPGA pair (6, 14) has 1 connections, limit is 512!
+FPGA pair (6, 15): 187 nets
+FPGA pair (6, 15) has 1 connections, limit is 512!
+FPGA pair (7, 8): 70 nets
+FPGA pair (7, 8) has 1 connections, limit is 512!
+FPGA pair (7, 14): 180 nets
+FPGA pair (7, 14) has 1 connections, limit is 512!
+FPGA pair (7, 15): 136 nets
+FPGA pair (7, 15) has 1 connections, limit is 512!
+FPGA pair (7, 16): 157 nets
+FPGA pair (7, 16) has 1 connections, limit is 512!
+FPGA pair (8, 9): 154 nets
+FPGA pair (8, 9) has 1 connections, limit is 512!
+FPGA pair (8, 15): 152 nets
+FPGA pair (8, 15) has 1 connections, limit is 512!
+FPGA pair (8, 16): 162 nets
+FPGA pair (8, 16) has 1 connections, limit is 512!
+FPGA pair (9, 10): 76 nets
+FPGA pair (9, 10) has 1 connections, limit is 512!
+FPGA pair (9, 11): 68 nets
+FPGA pair (9, 11) has 1 connections, limit is 512!
+FPGA pair (9, 13): 165 nets
+FPGA pair (9, 13) has 1 connections, limit is 512!
+FPGA pair (9, 15): 112 nets
+FPGA pair (9, 15) has 1 connections, limit is 512!
+FPGA pair (9, 16): 47 nets
+FPGA pair (9, 16) has 1 connections, limit is 512!
+FPGA pair (9, 17): 156 nets
+FPGA pair (9, 17) has 1 connections, limit is 512!
+FPGA pair (9, 18): 170 nets
+FPGA pair (9, 18) has 1 connections, limit is 512!
+FPGA pair (9, 24): 219 nets
+FPGA pair (9, 24) has 1 connections, limit is 512!
+FPGA pair (10, 11): 81 nets
+FPGA pair (10, 11) has 1 connections, limit is 512!
+FPGA pair (10, 12): 85 nets
+FPGA pair (10, 12) has 1 connections, limit is 512!
+FPGA pair (10, 14): 105 nets
+FPGA pair (10, 14) has 1 connections, limit is 512!
+FPGA pair (10, 16): 128 nets
+FPGA pair (10, 16) has 1 connections, limit is 512!
+FPGA pair (10, 17): 255 nets
+FPGA pair (10, 17) has 1 connections, limit is 512!
+FPGA pair (10, 18): 177 nets
+FPGA pair (10, 18) has 1 connections, limit is 512!
+FPGA pair (10, 19): 250 nets
+FPGA pair (10, 19) has 1 connections, limit is 512!
+FPGA pair (11, 12): 134 nets
+FPGA pair (11, 12) has 1 connections, limit is 512!
+FPGA pair (11, 13): 112 nets
+FPGA pair (11, 13) has 1 connections, limit is 512!
+FPGA pair (11, 15): 112 nets
+FPGA pair (11, 15) has 1 connections, limit is 512!
+FPGA pair (11, 18): 182 nets
+FPGA pair (11, 18) has 1 connections, limit is 512!
+FPGA pair (11, 19): 178 nets
+FPGA pair (11, 19) has 1 connections, limit is 512!
+FPGA pair (11, 20): 204 nets
+FPGA pair (11, 20) has 1 connections, limit is 512!
+FPGA pair (12, 13): 106 nets
+FPGA pair (12, 13) has 1 connections, limit is 512!
+FPGA pair (12, 14): 100 nets
+FPGA pair (12, 14) has 1 connections, limit is 512!
+FPGA pair (12, 16): 113 nets
+FPGA pair (12, 16) has 1 connections, limit is 512!
+FPGA pair (12, 19): 168 nets
+FPGA pair (12, 19) has 1 connections, limit is 512!
+FPGA pair (12, 20): 161 nets
+FPGA pair (12, 20) has 1 connections, limit is 512!
+FPGA pair (12, 21): 198 nets
+FPGA pair (12, 21) has 1 connections, limit is 512!
+FPGA pair (13, 14): 62 nets
+FPGA pair (13, 14) has 1 connections, limit is 512!
+FPGA pair (13, 15): 121 nets
+FPGA pair (13, 15) has 1 connections, limit is 512!
+FPGA pair (13, 20): 185 nets
+FPGA pair (13, 20) has 1 connections, limit is 512!
+FPGA pair (13, 21): 167 nets
+FPGA pair (13, 21) has 1 connections, limit is 512!
+FPGA pair (13, 22): 191 nets
+FPGA pair (13, 22) has 1 connections, limit is 512!
+FPGA pair (14, 15): 98 nets
+FPGA pair (14, 15) has 1 connections, limit is 512!
+FPGA pair (14, 16): 105 nets
+FPGA pair (14, 16) has 1 connections, limit is 512!
+FPGA pair (14, 21): 180 nets
+FPGA pair (14, 21) has 1 connections, limit is 512!
+FPGA pair (14, 22): 166 nets
+FPGA pair (14, 22) has 1 connections, limit is 512!
+FPGA pair (14, 23): 195 nets
+FPGA pair (14, 23) has 1 connections, limit is 512!
+FPGA pair (15, 16): 64 nets
+FPGA pair (15, 16) has 1 connections, limit is 512!
+FPGA pair (15, 22): 170 nets
+FPGA pair (15, 22) has 1 connections, limit is 512!
+FPGA pair (15, 23): 186 nets
+FPGA pair (15, 23) has 1 connections, limit is 512!
+FPGA pair (15, 24): 178 nets
+FPGA pair (15, 24) has 1 connections, limit is 512!
+FPGA pair (16, 17): 153 nets
+FPGA pair (16, 17) has 1 connections, limit is 512!
+FPGA pair (16, 23): 168 nets
+FPGA pair (16, 23) has 1 connections, limit is 512!
+FPGA pair (16, 24): 162 nets
+FPGA pair (16, 24) has 1 connections, limit is 512!
+FPGA pair (17, 18): 51 nets
+FPGA pair (17, 18) has 1 connections, limit is 512!
+FPGA pair (17, 19): 83 nets
+FPGA pair (17, 19) has 1 connections, limit is 512!
+FPGA pair (17, 21): 151 nets
+FPGA pair (17, 21) has 1 connections, limit is 512!
+FPGA pair (17, 23): 35 nets
+FPGA pair (17, 23) has 1 connections, limit is 512!
+FPGA pair (17, 24): 57 nets
+FPGA pair (17, 24) has 1 connections, limit is 512!
+FPGA pair (17, 25): 137 nets
+FPGA pair (17, 25) has 1 connections, limit is 512!
+FPGA pair (17, 26): 237 nets
+FPGA pair (17, 26) has 1 connections, limit is 512!
+FPGA pair (17, 32): 259 nets
+FPGA pair (17, 32) has 1 connections, limit is 512!
+FPGA pair (18, 19): 73 nets
+FPGA pair (18, 19) has 1 connections, limit is 512!
+FPGA pair (18, 20): 105 nets
+FPGA pair (18, 20) has 1 connections, limit is 512!
+FPGA pair (18, 22): 117 nets
+FPGA pair (18, 22) has 1 connections, limit is 512!
+FPGA pair (18, 24): 113 nets
+FPGA pair (18, 24) has 1 connections, limit is 512!
+FPGA pair (18, 25): 149 nets
+FPGA pair (18, 25) has 1 connections, limit is 512!
+FPGA pair (18, 26): 137 nets
+FPGA pair (18, 26) has 1 connections, limit is 512!
+FPGA pair (18, 27): 104 nets
+FPGA pair (18, 27) has 1 connections, limit is 512!
+FPGA pair (19, 20): 94 nets
+FPGA pair (19, 20) has 1 connections, limit is 512!
+FPGA pair (19, 21): 120 nets
+FPGA pair (19, 21) has 1 connections, limit is 512!
+FPGA pair (19, 23): 123 nets
+FPGA pair (19, 23) has 1 connections, limit is 512!
+FPGA pair (19, 26): 136 nets
+FPGA pair (19, 26) has 1 connections, limit is 512!
+FPGA pair (19, 27): 38 nets
+FPGA pair (19, 27) has 1 connections, limit is 512!
+FPGA pair (19, 28): 168 nets
+FPGA pair (19, 28) has 1 connections, limit is 512!
+FPGA pair (20, 21): 91 nets
+FPGA pair (20, 21) has 1 connections, limit is 512!
+FPGA pair (20, 22): 103 nets
+FPGA pair (20, 22) has 1 connections, limit is 512!
+FPGA pair (20, 24): 114 nets
+FPGA pair (20, 24) has 1 connections, limit is 512!
+FPGA pair (20, 27): 60 nets
+FPGA pair (20, 27) has 1 connections, limit is 512!
+FPGA pair (20, 28): 141 nets
+FPGA pair (20, 28) has 1 connections, limit is 512!
+FPGA pair (20, 29): 164 nets
+FPGA pair (20, 29) has 1 connections, limit is 512!
+FPGA pair (21, 22): 121 nets
+FPGA pair (21, 22) has 1 connections, limit is 512!
+FPGA pair (21, 23): 127 nets
+FPGA pair (21, 23) has 1 connections, limit is 512!
+FPGA pair (21, 28): 126 nets
+FPGA pair (21, 28) has 1 connections, limit is 512!
+FPGA pair (21, 29): 107 nets
+FPGA pair (21, 29) has 1 connections, limit is 512!
+FPGA pair (21, 30): 161 nets
+FPGA pair (21, 30) has 1 connections, limit is 512!
+FPGA pair (22, 23): 37 nets
+FPGA pair (22, 23) has 1 connections, limit is 512!
+FPGA pair (22, 24): 113 nets
+FPGA pair (22, 24) has 1 connections, limit is 512!
+FPGA pair (22, 29): 132 nets
+FPGA pair (22, 29) has 1 connections, limit is 512!
+FPGA pair (22, 30): 164 nets
+FPGA pair (22, 30) has 1 connections, limit is 512!
+FPGA pair (22, 31): 133 nets
+FPGA pair (22, 31) has 1 connections, limit is 512!
+FPGA pair (23, 24): 80 nets
+FPGA pair (23, 24) has 1 connections, limit is 512!
+FPGA pair (23, 30): 152 nets
+FPGA pair (23, 30) has 1 connections, limit is 512!
+FPGA pair (23, 31): 116 nets
+FPGA pair (23, 31) has 1 connections, limit is 512!
+FPGA pair (23, 32): 182 nets
+FPGA pair (23, 32) has 1 connections, limit is 512!
+FPGA pair (24, 25): 140 nets
+FPGA pair (24, 25) has 1 connections, limit is 512!
+FPGA pair (24, 31): 126 nets
+FPGA pair (24, 31) has 1 connections, limit is 512!
+FPGA pair (24, 32): 186 nets
+FPGA pair (24, 32) has 1 connections, limit is 512!
+FPGA pair (25, 26): 248 nets
+FPGA pair (25, 26) has 1 connections, limit is 512!
+FPGA pair (25, 32): 235 nets
+FPGA pair (25, 32) has 1 connections, limit is 512!
+FPGA pair (26, 27): 56 nets
+FPGA pair (26, 27) has 1 connections, limit is 512!
+FPGA pair (27, 28): 95 nets
+FPGA pair (27, 28) has 1 connections, limit is 512!
+FPGA pair (28, 29): 158 nets
+FPGA pair (28, 29) has 1 connections, limit is 512!
+FPGA pair (29, 30): 83 nets
+FPGA pair (29, 30) has 1 connections, limit is 512!
+FPGA pair (30, 31): 80 nets
+FPGA pair (30, 31) has 1 connections, limit is 512!
+FPGA pair (31, 32): 26 nets
+FPGA pair (31, 32) has 1 connections, limit is 512!
+All FPGA pairs are within the net limit.
+
+Check whether all nets have routed
+All nets has routed
+
+Calculate the score of max delay: 
+Score of max delay =  639.2

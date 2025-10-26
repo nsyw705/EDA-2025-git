@@ -22,6 +22,8 @@
 #include <functional>
 #include <iomanip>
 #include <numeric>
+#include<random>
+#include <iterator>
 using namespace std;
 
 #define MININT -2147483648
@@ -86,16 +88,18 @@ typedef struct
 }Net;
 vector<Net> Global, Current; // 所有net的数组，Global记录找到的最优解，Cureent记录搜索过程中变化的解
 double* net_delay; // 每个net的延时，用于存储找到的全局最优
+double Global_delay;//Global对应的延迟
 
 
 //快速排序
-void qsort_double(double* s, int* address, int l, int r)
+void qsort_double(double* s, int* address, int l, int r)//降序
 {
+	if(l>=r){return;}
 	if (l < r)
 	{
 		int i = l, j = r;
-		double x = s[l];
-		int y = address[l];
+		double x = s[l+((r-l)>>1)];
+		int y = address[l + ((r - l) >> 1)];
 		while (i < j)
 		{
 			while (i < j && s[j] <= x)
@@ -125,13 +129,14 @@ void qsort_double(double* s, int* address, int l, int r)
 
 
 //快速排序
-void qsort_vector(vector<double>& s , vector<int>& address, int l, int r)
+void qsort_vector(vector<double>& s , vector<int>& address, int l, int r)//升序
 {
+	if (l>=r){return ;}
 	if (l < r)
 	{
 		int i = l, j = r;
-		double x = s[l];
-		int y = address[l];
+		double x = s[l + ((r - l) >> 1)];
+		int y = address[l + ((r - l) >> 1)];
 		while (i < j)
 		{
 			while (i < j && s[j] >= x)
@@ -500,17 +505,16 @@ vector<vector<double>> current_cost(int** weight_matrix, int** nets_count_matrix
 // 输入：起点、终点、计算权重依据的跨通道net数量矩阵
 // 输出：路径、路径延迟
 //*****************************************************************************************
-void single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M , double& delay_value)
-{
+double single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M , double& delay_value)
+{ 
 	int* best_path = new int[numFPGA]; //新建一条路径，用于存储新找的最优路径
 	//int source_fpga = nodes_FPGA[source_node];//源点对应的FPGA
 	//int sink_fpga = nodes_FPGA[sink_node]; //终点对应的FPGA
 
 	if (source_fpga == sink_fpga) // 起点终点在相同FPGA里
 	{
-		delay_value = 0;
-		//path.clear();
-		return;
+		delay_value = 0; //path.clear();
+		return 0;
 	}
 	/*dijkstra*/
 	double* dist = new double[numFPGA + 1];
@@ -584,8 +588,8 @@ void single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M , double&
 	delete[] visited;
 	delete[] prev;
 	delete[] best_path;
+	return delay_value;
 }
-
 
 void multi_dijkstra(int source_node, vector<int> sink_node, vector<vector<pair<int, int>>>& path) {
 	int k = (int)sink_node.size();
@@ -692,7 +696,7 @@ void initialize_solution() {//初始化
 				if (net.path_map.find(arc) != net.path_map.end()) //找到边
 					net.path_map[arc]++;
 				else if(net.path_map.find(arc) == net.path_map.end()) //未找到边
-					net.path_map[arc] = 0;
+					net.path_map[arc] = 1;
 			}
 		}
 		for (auto& p : net.path_map)
@@ -704,6 +708,13 @@ void initialize_solution() {//初始化
 	}
 
 	calculate_su(Current); //初始化后计算delay
+	for (int x = 0; x < numNet; x++)
+	{
+		if (net_delay[x] > Global_delay)
+		{
+			Global_delay = net_delay[x];
+		}
+	}
 	copy_solution(Global,Current);
 }
 
@@ -715,36 +726,57 @@ void initialize_solution() {//初始化
 // 输出：topk_candidates（按f降序截断到beamK，从o到A、B、C的路径）；
 //      
 //*****************************************************************************************
-void expand_beam_layer(int source_fpga, int sink_fpga, int** net_count_M,vector <pair<int,int>>& new_path, double& new_delay, int mode )
+void expand_beam_layer(int source_fpga, int sink_fpga, int** net_count_M,int& farm_index,vector<pair<int,int>>& new_path,vector<pair<int,int>>&farm_son_index,vector<int>& on_path )
 {
+	//使用类似树的结构将路径存进new_delay; 叶节点是包含sink_fpga;on_path用于去环,farm_son_index,在父节点记录子节点索引的数组。
+	if(source_fpga==sink_fpga){return;}
 	vector<int> sucessor_vertics;
 	vector<double> sucessor_delay; //输入点+后继到终点的总延时
 	int index = 0;
 	for (int x = 1; x <= numFPGA; x++) //寻找后继节点
 	{
-		if (weight_matrix[source_fpga][x] + delta_weight_matrix[source_fpga][x] == 0) continue;
-		sucessor_vertics[index] = x;
-
+		if (find(on_path.begin(), on_path.end(), x) != on_path.end()){continue;}
+		if (x == source_fpga){continue;}
+		if (weight_matrix[source_fpga][x] + delta_weight_matrix[source_fpga][x] == 0) {continue;}
+		sucessor_vertics.push_back(x);
 		int tmd_ratio = ceil8((double)(net_count_M[source_fpga][x] + 1) / (weight_matrix[source_fpga][x] + delta_weight_matrix[source_fpga][x]));
-		if (tmd_ratio > R_max) continue; //判断最大TDM比率约束
+		if (tmd_ratio > R_max) {
+			sucessor_vertics.pop_back();
+			continue;} //判断最大TDM比率约束
 		double edge_delay = 30 + (0.7 * (double)tmd_ratio); //输入点到其后继节点延时值
-		sucessor_delay[index] = edge_delay;
+		sucessor_delay.push_back(edge_delay);
 
 		double path_delay = (double)MAXINT;
-		single_dijkstra(x, sink_fpga, net_count_M, path_delay); //从后继节点到终点的dijkstra路径延时值
-		sucessor_delay[index] += path_delay;
+		if(x!=sink_fpga){
+			single_dijkstra(x, sink_fpga, net_count_M, path_delay); // 从后继节点到终点的dijkstra路径延时值
+			sucessor_delay[index] += path_delay;
+		}
 		index++;
 	}
 
 	qsort_vector(sucessor_delay, sucessor_vertics, 0, index - 1); //对 f = OA+AF排序
 	int retain_vertics = SDF_MIN(BEAMWIDTH, (int)sucessor_vertics.size()); //确定束搜索数量
+	if(retain_vertics<=0){return;}
+	sucessor_delay.resize(retain_vertics);
+	sucessor_vertics.resize(retain_vertics);
+	//将路径存进树中,随机选一个存
+	static thread_local std::mt19937 rng(std::random_device{}());
+	std::uniform_int_distribution<size_t> dist(0, sucessor_vertics.size() - 1);
+	size_t idx = dist(rng);
 
-	
+	int chosen_vertex = sucessor_vertics[idx];
+	new_path.push_back({source_fpga, chosen_vertex});
+	//子节点的索引
+	farm_son_index.resize(new_path.size(),{0,0});
+	farm_son_index[farm_index]={new_path.size() - 1, new_path.size() - 1};
+	// cout<<"the size:"<<new_path.size()<<endl;
 
-
-
-
-
+	int son_index = new_path.size()-1;
+	// cout<<son_index+1<<endl;//检查长度
+	vector<int> new_on_path=on_path;
+	new_on_path.push_back(chosen_vertex);
+	expand_beam_layer(chosen_vertex, sink_fpga, net_count_M, son_index, new_path, farm_son_index, new_on_path);
+	on_path.clear();
 
 }
 
@@ -756,14 +788,16 @@ void expand_beam_layer(int source_fpga, int sink_fpga, int** net_count_M,vector 
 // 输入：路径所在net，路径终点的索引值（路径起点可直接查）
 // 输出：新规划的路径
 //*****************************************************************************************
-void re_shecdule_path(int net,  int sink_index)
-{
+void re_shecdule_path(int net_id,  int sink_index)
+{	
 	// ---------- (0) 数据结构与参数设置  ----------
-	auto target_net = Current[net]; //最差路径所在的net
+	auto target_net = Current[net_id]; //最差路径所在的net
 	int source_node = target_net.source_node; //net中的起点
 	int sink_node = target_net.sink_nodes[sink_index]; // net中的终点
+	vector<pair<int, int>> new_path;//c存储路径的树
+	vector<pair<int,int>> farm_son_index;//存储子节点的索引
 
-	int source_fpga = nodes_FPGA[source_node]; //起点、终点对应的FPGA
+	int source_fpga = nodes_FPGA[source_node]; // 起点、终点对应的FPGA
 	int sink_fpga = nodes_FPGA[sink_node];
 
 	auto target_path = target_net.path[sink_index]; //最差路径
@@ -773,41 +807,34 @@ void re_shecdule_path(int net,  int sink_index)
 	candidate_paths.assign(BEAMWIDTH, {});
 	candidate_paths_delay.assign(BEAMWIDTH, (double)MAXINT);
 	int** temp_nets_count_matrix = new int* [numFPGA + 1]; // 搜索过程中调整后的通道数量
-	for (int x = 0; x < numFPGA + 1; x++)
-	{
+	for (int x = 0; x < numFPGA + 1; x++){
 		temp_nets_count_matrix[x] = new int[numFPGA + 1];
 		for (int y = 0; y < numFPGA + 1; y++)
 			temp_nets_count_matrix[x][y] = nets_count_matrix[x][y];
 	}
-
-
-	// ---------- (1) 假设取消原路径，调整通道数量  ----------
+    // ---------- (1) 假设取消原路径，调整通道数量  ----------
 	pair <int, int> arc = {};
 	for (auto edges : target_path) //遍历路径中的所有边
 	{
 		int a = edges.first;
 		int b = edges.second;
-
-		if (a > b)
-			arc = {b, a};
-		else
-			arc = {a, b};
+		if (a > b){arc = {b, a};}
+		else{arc = {a, b};}
 
 		if (target_net.path_map.find(arc) == target_net.path_map.end()) //在net中查找此边的使用次数
 		{
-			cout << "path_map of Net does not record an arc!!!！";
+			cout << "1path_map of Net does not record an arc!!!";
 			exit(-1);
 		}
-		else
-		{
+		else{
 			if (target_net.path_map[arc] == 1) //该边在整个net中仅使用一次，取消原路径后，此net不再跨越此边，对应记录减一
 			{
 				temp_nets_count_matrix[a][b]--;
 				temp_nets_count_matrix[b][a]--;
 			}
+			target_net.path_map[arc]--;
 		}
 	}
-
 
 	// ---------- (2)递归进行束搜索扩展，生成Top-K候选路径 ----------
 	
@@ -817,37 +844,132 @@ void re_shecdule_path(int net,  int sink_index)
 	for (int x = 1; x <= numFPGA; x++) //寻找后继节点
 	{
 		if (weight_matrix[source_fpga][x] + delta_weight_matrix[source_fpga][x] == 0) continue;
-		sucessor_vertics[index] = x;
+		sucessor_vertics.push_back(x);
 
 		int tmd_ratio = ceil8((double)(temp_nets_count_matrix[source_fpga][x] + 1) / (weight_matrix[source_fpga][x] + delta_weight_matrix[source_fpga][x]));
-		if (tmd_ratio > R_max) continue; //判断最大TDM比率约束
+		if (tmd_ratio > R_max){
+			sucessor_vertics.pop_back();
+			continue;
+		}													// 判断最大TDM比率约束
 		double edge_delay = 30 + (0.7 * (double)tmd_ratio); //输入点到其后继节点延时值
-		sucessor_delay[index] = edge_delay;
+		sucessor_delay.push_back(edge_delay);
 
 		double path_delay = (double)MAXINT;
-		single_dijkstra(x, sink_fpga, temp_nets_count_matrix, path_delay); //从后继节点到终点的dijkstra路径延时值
-		sucessor_delay[index] += path_delay;
+		if(x!=sink_fpga){
+			single_dijkstra(x, sink_fpga, temp_nets_count_matrix, path_delay); //从后继节点到终点的dijkstra路径延时值
+			sucessor_delay[index] += path_delay;}
 		index++;
 	}
 
 	qsort_vector(sucessor_delay, sucessor_vertics, 0, index - 1); //对 f = OA+AF排序
 
-	int k = BEAMWIDTH; //最找找到的最好的路径数量 and 每层保留的节点数量
+	int retain_vertics = SDF_MIN(BEAMWIDTH, (int)sucessor_vertics.size()); // 确定束搜索数量
+	if(retain_vertics<=0){return;}
 	vector<vector<pair<int, int>>> top_k_paths; //最好的k条路径
-	for (int x = 0; x < k; x++)
-		top_k_paths[x].push_back({ source_fpga, sucessor_vertics[x] }); // 按顺序保持前k个节点
-	
-
-	//expand_beam_layer(); //
-
+	new_path.resize(retain_vertics+1,{0,0});farm_son_index.push_back({1,retain_vertics});
+	vector<int> on_path = {source_fpga};
+	new_path[0]={-1,-1};//树顶初始为-1
+	for (int x = 0; x < retain_vertics; x++){
+		new_path[x + 1] = {source_fpga, sucessor_vertics[x]};}
+	for (int x=0;x<retain_vertics;x++){
+		int farm_id=x+1;
+		on_path.clear();
+		on_path.push_back(source_fpga);on_path.push_back(sucessor_vertics[x]);
+		expand_beam_layer(sucessor_vertics[x], sink_fpga, temp_nets_count_matrix, farm_id, new_path, farm_son_index,on_path);
+	}
+	//取路径
+	top_k_paths.resize(retain_vertics);
+	int a=farm_son_index[0].first,b=farm_son_index[0].second;
+	int i=0;
+	for(;a<=b;a++){
+		int path_index=a;
+		while(farm_son_index[path_index].second!=0){
+			top_k_paths[i].push_back({new_path[path_index].first,new_path[path_index].second});
+			if (farm_son_index[path_index].first != farm_son_index[path_index].second)
+			{
+				cout << "the index of farm_son_index is error!" << endl;
+			}
+			path_index = farm_son_index[path_index].first;
+		}
+		top_k_paths[i].push_back({new_path[path_index].first, new_path[path_index].second});
+		i++;
+	}
+	vector<int> topk_check;//收集满足要求的路径，成功连接到sink_fpga
+	for(int i=0;i<top_k_paths.size();i++){
+		if(top_k_paths[i].back().second!=sink_fpga){continue;}
+		topk_check.push_back(i);
+	}
+	if(topk_check.size()==0){return;}//说明无合法路径
 
 	// ---------- (3) 在Top-K中随机选一条并更新 -----------
 	// random_pick_from_topk(topk_candidates, chosen);
+	static thread_local std::mt19937 rng(std::random_device{}());
+	std::uniform_int_distribution<size_t> dist(0, topk_check.size()- 1);
+	size_t idx = dist(rng);
+
+	int chosen_id = topk_check[idx];
+
 	// apply_update_and_refresh(worst, chosen);
+		//实际取消原路径：取消原路径，调整通道数量
+	pair<int, int> arc_change = {};
+	for (auto edges : Current[net_id].path[sink_index]) // 遍历路径中的所有边
+	{
+		int a = edges.first;int b = edges.second;
+		if (a > b)
+		{
+			arc_change = {b, a};
+		}
+		else
+		{
+			arc_change = {a, b};
+		}
 
+		if (Current[net_id].path_map.find(arc_change) == Current[net_id].path_map.end()) // 在net中查找此边的使用次数
+		{
+			cout << "2path_map of Net does not record an arc!!!";
+			exit(-1);
+		}
+		else
+		{
+			if (Current[net_id].path_map[arc_change] == 1) // 该边在整个net中仅使用一次，取消原路径后，此net不再跨越此边，对应记录减一
+			{
+				nets_count_matrix[a][b]--;
+				nets_count_matrix[b][a]--;
+			}
+			Current[net_id].path_map[arc_change]--;
+			if (Current[net_id].path_map[arc_change] == 0){Current[net_id].path_map.erase(arc_change);}
+		}
+	}
+		//修改原路径同时，调整通道数量
+	Current[net_id].path[sink_index]=top_k_paths[chosen_id];
+	pair<int, int> arc_add = {};
+	for (auto edges : Current[net_id].path[sink_index]) // 遍历路径中的所有边
+	{
+		int a = edges.first;
+		int b = edges.second;
+		if (a > b)
+		{
+			arc_add = {b, a};
+		}
+		else
+		{
+			arc_add = {a, b};
+		}
 
-	for (int x = 0; x < numFPGA + 1; x++)
-		delete[] temp_nets_count_matrix[x];
+		if (Current[net_id].path_map.find(arc_add) == Current[net_id].path_map.end()) // 在net中查找此边的使用次数
+		{
+			nets_count_matrix[a][b]++;
+			nets_count_matrix[b][a]++;
+			Current[net_id].path_map[arc_add]=1;
+		}
+		else
+		{
+		
+			Current[net_id].path_map[arc_add]++;
+		}
+	}
+
+		for (int x = 0; x < numFPGA + 1; x++) {delete[] temp_nets_count_matrix[x];}
 	delete[] temp_nets_count_matrix;
 }
 
@@ -869,7 +991,7 @@ void beam_search(int beamK = 3, int max_layers = -1, int topK = -1)
 	double* temp_net_delay = new double[numNet]; //复制net_delay值，以防破坏全局变量造成隐藏bug
 	int* net_index = new int[numNet]; //net的标号，用于排序后查找top-n个最差路径的标号
 	int max_net = -1; //最差路径所在net
-	int search_depth = 100; //最大未改善次数 （暂时使用最大未改善次数终止，随时可改）
+	int search_depth = 10; //最大未改善次数 （暂时使用最大未改善次数终止，随时可改）
 	int no_improve = 0;
 
 
@@ -898,12 +1020,22 @@ void beam_search(int beamK = 3, int max_layers = -1, int topK = -1)
 
 
 		// ---------- (2) 束搜索重新规划路径（含可行性校验） ----------
-		
 		re_shecdule_path(max_net, max_path_sink_index); //重新规划最差路线
-
-	
-
-
+		calculate_su(Current);
+		double new_max_delay=0;
+		for (int x = 0; x < numNet; x++)
+		{
+			if(net_delay[x]>new_max_delay){new_max_delay=net_delay[x];}
+		}
+		if(new_max_delay<temp_net_delay[0]){
+			no_improve=0;
+			if(new_max_delay<Global_delay){
+				copy_solution(Global, Current);
+				Global_delay=new_max_delay;
+			}
+			cout<<new_max_delay<<endl;
+		}
+		else{no_improve++;}
 	}
 	delete[] temp_net_delay;
 	delete[] net_index;
@@ -1011,14 +1143,13 @@ int main(int argc, char** argv)
 
 	// 读取实例
 	read_instance();
-
+	
 	// 运行时间限制
-	double maxRunTime = 20;
+	double maxRunTime = 10;
 
 	//运行主算法
 	optimize_with_beam_search(maxRunTime);
-
-	//输出结果
+		// 输出结果
 	file_output();
 
 	cout << endl;
