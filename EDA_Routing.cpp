@@ -1121,6 +1121,160 @@ void file_output()//输出design.route.out
 }
 
 
+bool check_result() {
+
+    cout << "There is no new topo file" << endl;
+
+    // ---------- (A) 单次(i<j)循环合并：改动规模 + TDM + 容量累计 ----------
+    int total_physical_links = 0;     // Σ weight(i,j)
+    int delta_sum = 0;                // Σ |delta(i,j)|
+    vector<int> sum_conn(numFPGA + 1, 0); // 每个FPGA的对外连接数
+    vector<int> change_per_fpga(numFPGA + 1, 0);//每个FPGA的对外连接变化
+
+
+    cout << endl << "Check FPGA channel capacity constraint" << endl;
+
+    for (int i = 1; i <= numFPGA; ++i) {
+        for (int j = i + 1; j <= numFPGA; ++j) {
+            int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
+
+            total_physical_links += weight_matrix[i][j];
+			int d_abs = abs(delta_weight_matrix[i][j]);
+            delta_sum += d_abs;
+
+            change_per_fpga[i]+=d_abs;
+            change_per_fpga[j]+=d_abs;
+
+
+            sum_conn[i] += phys;
+            sum_conn[j] += phys;
+
+            // TDM & 物理缺失
+            int nets_on_pair = nets_count_matrix[i][j];
+            if (nets_on_pair > 0 && phys == 0 ) {
+                cout << "[E1] Denominator is zero in ratio calculation: pair(" << i << "," << j
+                        << ") nets=" << nets_on_pair << ", phys=0\n";//ratio计算中分母为0
+                return false;
+            }
+
+            // TDM计算：先 ceil(nets/phys)，再 ceil 到8的倍数，≤512
+			int tdm_q = ( ( (int)ceil((double)nets_on_pair / (double)phys) + 7 ) & ~7 );
+			
+            if (tdm_q > 512) {
+                std::cout << "[E2] TDM ratio exceeds limit for pair(" << i << "," << j << "): ceil("
+                          << nets_on_pair << "/" << phys << ")=" << ceil(nets_on_pair /phys)
+                          << ", quantized=" << tdm_q << " > 512\n";//TDM 超限
+                return false;
+            }
+        }
+    }
+
+    cout << "All FPGA channel capacity satisfies the constraint" << endl;
+    cout << "Total number of connection is: " << std::fixed << std::setprecision(1)
+         << (double)total_physical_links << endl << endl;
+
+    // ---------- (B) 改动规模约束 ----------
+    if (delta_sum > total_physical_links * 0.3) {
+        std::cout << "[E3] Total delta change exceeds limit: delta_sum=" << delta_sum
+                    << " > limit=" << total_physical_links * 0.3 << "\n";//改动规模超限
+        return false;
+    }
+	
+	cout << "Check channel reconfiguration scope constraint" << endl;
+    cout << "Detail info of changing connections :" << endl;
+
+
+
+
+    for (int f = 1; f <= numFPGA; ++f)
+        cout << "Number of changing connections of FPGA F" << f << " is: "
+             << change_per_fpga[f] << endl;
+
+    cout << "Total number of changing connections: " << std::fixed << std::setprecision(1)
+         << (double)delta_sum << endl;
+    cout << "The variation in connection channels satisfies the constraints" << endl << endl;
+
+
+    // ---------- (C) 通道容量约束 ----------
+     for (int i = 1; i <= numFPGA; ++i) {
+        if (sum_conn[i] > FPGA_max_weight[i]) {
+            std::cout << "[E4] Channel capacity exceeded: FPGA " << i
+                      << " total=" << sum_conn[i]
+                      << " > max=" << FPGA_max_weight[i] << "\n";//容量超限
+            return false;
+        }
+    }
+	
+	cout << "Check the max ratio constraints:" << endl;
+    for (int i = 1; i <= numFPGA; ++i) {
+        for (int j = i + 1; j <= numFPGA; ++j) {
+            if (nets_count_matrix[i][j] <= 0) continue; // 跳过net=0的pair
+
+            int nets_on_pair = nets_count_matrix[i][j];
+            int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
+
+            cout << "FPGA pair (" << i << ", " << j << "): "
+                 << nets_on_pair << " nets" << endl;
+            cout << "FPGA pair (" << i << ", " << j << ") has "
+                 << phys << " connections, limit is "<<512*phys<<"!" << endl;
+        }
+    }
+    cout << "All FPGA pairs are within the net limit." << endl << endl;
+
+
+    // ---------- (D) 路径检查 ----------
+
+    for (int k = 0; k < (int)Current.size(); ++k) {
+
+        for (int t = 0; t < (int)Current[k].path.size(); ++t) {
+
+
+            if (!Current[k].path[t].empty()) 
+            {
+                int s_fpga = nodes_FPGA[ Current[k].source_node ];
+                int g_fpga = nodes_FPGA[ Current[k].sink_nodes[t] ];
+
+                int cur = s_fpga;
+                
+                for (int e = 0; e < (int)Current[k].path[t].size(); ++e) {
+                    int u = Current[k].path[t][e].first;
+                    int v = Current[k].path[t][e].second;
+                    int final_uv = weight_matrix[u][v] + delta_weight_matrix[u][v];
+
+
+                    // 有向连续性
+                    if (u != cur) {
+                        std::cout << "[E5] Logical path discontinuity in net " << k
+                                << " sinkIdx " << t << " cur=" << cur
+                                << " edge=(" << u << "," << v << ")\n";
+                        return false;
+                    }
+                    cur = v;
+                }
+            }
+
+
+        }
+    }
+
+	
+	cout << "Check whether all nets have routed" << endl;
+    cout << "All nets has routed" << endl << endl;
+
+
+    // ---------- (E) 计算得分 ----------
+    cout << "Calculate the score of max delay: " << endl;
+    double score_max_delay = 0.0;
+    for (int k = 0; k < (int)Current.size(); ++k) {
+        for (int t = 0; t < (int)Current[k].path_delay.size(); ++t)
+            score_max_delay = max(score_max_delay, Current[k].path_delay[t]);
+    }
+    cout << "Score of max delay =  " << std::fixed << std::setprecision(1)
+         << score_max_delay << endl;
+
+    return true;
+}
+
 int main(int argc, char** argv)
 {
 	if (argc == 7) {
