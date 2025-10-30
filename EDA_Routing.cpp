@@ -80,7 +80,7 @@ typedef struct
 	vector<double> path_delay; //每条路径的延时
 }Net;
 vector<Net> Global, Current; // 所有net的数组，Global记录找到的最优解，Cureent记录搜索过程中变化的解
-double* net_delay; // 每个net的延时，用于存储找到的全局最优
+double* net_delay; 
 double Global_delay;//Global对应的延迟
 
 
@@ -164,18 +164,28 @@ void read_instance()
 	char designNetName[50];
 	char designTopoName[50];
 	char designFpgaOutName[50];
+	
+	// strcpy_s(temp_caseName, caseName);
+	// strcat_s(temp_caseName, sizeof(temp_caseName), "/");
+	// strcpy_s(designInfoName, temp_caseName);
+	// strcpy_s(designNetName, temp_caseName);
+	// strcpy_s(designTopoName, temp_caseName);
+	// strcpy_s(designFpgaOutName, temp_caseName);
 
-	strcpy_s(temp_caseName, caseName);
-	strcat_s(temp_caseName, sizeof(temp_caseName), "/");
-	strcpy_s(designInfoName, temp_caseName);
-	strcpy_s(designNetName, temp_caseName);
-	strcpy_s(designTopoName, temp_caseName);
-	strcpy_s(designFpgaOutName, temp_caseName);
+	// strcat_s(designInfoName, sizeof(designInfoName), designInfo);
+	// strcat_s(designNetName, sizeof(designNetName), designNet);
+	// strcat_s(designTopoName, sizeof(designTopoName), designTopo);
+	// strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
 
-	strcat_s(designInfoName, sizeof(designInfoName), designInfo);
-	strcat_s(designNetName, sizeof(designNetName), designNet);
-	strcat_s(designTopoName, sizeof(designTopoName), designTopo);
-	strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
+
+
+	std::snprintf(temp_caseName, sizeof temp_caseName, "%s/", caseName);
+	std::snprintf(designInfoName, sizeof designInfoName, "%s%s", temp_caseName, designInfo);
+	std::snprintf(designNetName, sizeof designNetName, "%s%s", temp_caseName, designNet);
+	std::snprintf(designTopoName, sizeof designTopoName, "%s%s", temp_caseName, designTopo);
+	std::snprintf(designFpgaOutName, sizeof designFpgaOutName, "%s%s", temp_caseName, designFpgaOut);
+
+
 
 	R_max = 512; //最大TDM比率
 
@@ -396,162 +406,6 @@ void read_instance()
 
 }
 
-bool check_result()
-{
-
-	cout << "There is no new topo file" << endl;
-
-	// ---------- (A) 单次(i<j)循环合并：改动规模 + TDM + 容量累计 ----------
-	int total_physical_links = 0;     // Σ weight(i,j)
-	int delta_sum = 0;                // Σ |delta(i,j)|
-	vector<int> sum_conn(numFPGA + 1, 0); // 每个FPGA的对外连接数
-	vector<int> change_per_fpga(numFPGA + 1, 0);//每个FPGA的对外连接变化
-
-
-	cout << endl << "Check FPGA channel capacity constraint" << endl;
-
-	for (int i = 1; i <= numFPGA; ++i) {
-		for (int j = i + 1; j <= numFPGA; ++j) {
-			int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
-
-			total_physical_links += weight_matrix[i][j];
-			int d_abs = abs(delta_weight_matrix[i][j]);
-			delta_sum += d_abs;
-
-			change_per_fpga[i] += d_abs;
-			change_per_fpga[j] += d_abs;
-
-
-			sum_conn[i] += phys;
-			sum_conn[j] += phys;
-
-			// TDM & 物理缺失
-			int nets_on_pair = nets_count_matrix[i][j];
-			if (nets_on_pair > 0 && phys == 0) {
-				cout << "[E1] Denominator is zero in ratio calculation: pair(" << i << "," << j
-					<< ") nets=" << nets_on_pair << ", phys=0\n";//ratio计算中分母为0
-				return false;
-			}
-
-			// TDM计算：先 ceil(nets/phys)，再 ceil 到8的倍数，≤512
-			int tdm_q = (((int)ceil((double)nets_on_pair / (double)phys) + 7) & ~7);
-
-			if (tdm_q > 512) {
-				std::cout << "[E2] TDM ratio exceeds limit for pair(" << i << "," << j << "): ceil("
-					<< nets_on_pair << "/" << phys << ")=" << ceil(nets_on_pair / phys)
-					<< ", quantized=" << tdm_q << " > 512\n";//TDM 超限
-				return false;
-			}
-		}
-	}
-
-	cout << "All FPGA channel capacity satisfies the constraint" << endl;
-	cout << "Total number of connection is: " << std::fixed << std::setprecision(1)
-		<< (double)total_physical_links << endl << endl;
-
-	// ---------- (B) 改动规模约束 ----------
-	if (delta_sum > total_physical_links * 0.3) {
-		std::cout << "[E3] Total delta change exceeds limit: delta_sum=" << delta_sum
-			<< " > limit=" << total_physical_links * 0.3 << "\n";//改动规模超限
-		return false;
-	}
-
-	cout << "Check channel reconfiguration scope constraint" << endl;
-	cout << "Detail info of changing connections :" << endl;
-
-
-
-
-	for (int f = 1; f <= numFPGA; ++f)
-		cout << "Number of changing connections of FPGA F" << f << " is: "
-		<< change_per_fpga[f] << endl;
-
-	cout << "Total number of changing connections: " << std::fixed << std::setprecision(1)
-		<< (double)delta_sum << endl;
-	cout << "The variation in connection channels satisfies the constraints" << endl << endl;
-
-
-	// ---------- (C) 通道容量约束 ----------
-	for (int i = 1; i <= numFPGA; ++i) {
-		if (sum_conn[i] > FPGA_max_weight[i]) {
-			std::cout << "[E4] Channel capacity exceeded: FPGA " << i
-				<< " total=" << sum_conn[i]
-				<< " > max=" << FPGA_max_weight[i] << "\n";//容量超限
-				return false;
-		}
-	}
-
-	cout << "Check the max ratio constraints:" << endl;
-	for (int i = 1; i <= numFPGA; ++i) {
-		for (int j = i + 1; j <= numFPGA; ++j) {
-			if (nets_count_matrix[i][j] <= 0) continue; // 跳过net=0的pair
-
-			int nets_on_pair = nets_count_matrix[i][j];
-			int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
-
-			cout << "FPGA pair (" << i << ", " << j << "): "
-				<< nets_on_pair << " nets" << endl;
-			cout << "FPGA pair (" << i << ", " << j << ") has "
-				<< phys << " connections, limit is " << 512 * phys << "!" << endl;
-		}
-	}
-	cout << "All FPGA pairs are within the net limit." << endl << endl;
-
-
-	// ---------- (D) 路径检查 ----------
-
-	for (int k = 0; k < (int)Current.size(); ++k) {
-
-		for (int t = 0; t < (int)Current[k].path.size(); ++t) {
-
-
-			if (!Current[k].path[t].empty())
-			{
-				int s_fpga = nodes_FPGA[Current[k].source_node];
-				int g_fpga = nodes_FPGA[Current[k].sink_nodes[t]];
-
-				int cur = s_fpga;
-
-				for (int e = 0; e < (int)Current[k].path[t].size(); ++e) {
-					int u = Current[k].path[t][e].first;
-					int v = Current[k].path[t][e].second;
-					int final_uv = weight_matrix[u][v] + delta_weight_matrix[u][v];
-
-
-					// 有向连续性
-					if (u != cur) {
-						std::cout << "[E5] Logical path discontinuity in net " << k
-							<< " sinkIdx " << t << " cur=" << cur
-							<< " edge=(" << u << "," << v << ")\n";
-						return false;
-					}
-					cur = v;
-				}
-			}
-
-
-		}
-	}
-
-
-	cout << "Check whether all nets have routed" << endl;
-	cout << "All nets has routed" << endl << endl;
-
-
-	// ---------- (E) 计算得分 ----------
-	cout << "Calculate the score of max delay: " << endl;
-	double score_max_delay = 0.0;
-	for (int k = 0; k < (int)Current.size(); ++k) {
-		for (int t = 0; t < (int)Current[k].path_delay.size(); ++t)
-			score_max_delay = max(score_max_delay, Current[k].path_delay[t]);
-	}
-	cout << "Score of max delay =  " << std::fixed << std::setprecision(1)
-		<< score_max_delay << endl;
-
-	return true;
-}
-
-
 
 void check_read_instance() {
 	cout << numFPGA << ' ' << numNet << ' ' << numNode << endl;
@@ -606,6 +460,9 @@ void check_read_instance() {
 
 
 int ceil8(double x) { return static_cast<int>(std::ceil(x / 8.0) * 8.0); } // 取8的倍数
+
+
+
 vector<vector<double>> current_cost(int** weight_matrix, int** nets_count_matrix) // 当前的成本，也就是选择每条边的成本
 {
 	vector<vector<double>> costn(numFPGA, vector<double>(numFPGA, MAXINT));
@@ -1149,7 +1006,7 @@ void beam_search(int beamK = 3, int max_layers = -1, int topK = -1)
 	int* net_index = new int[numNet]; //net的标号，用于排序后查找top-n个最差路径的标号
 	int max_net = -1; //最差路径所在net
 	int max_path_sink_index = -1; //net中的最差路径终点标号
-	int search_depth = 1000; //最大未改善次数 （暂时使用最大未改善次数终止，随时可改）
+	int search_depth = 10; //最大未改善次数 （暂时使用最大未改善次数终止，随时可改）
 	int no_improve = 0;
 	int n = 3;
 
@@ -1216,12 +1073,51 @@ void beam_search(int beamK = 3, int max_layers = -1, int topK = -1)
 			}
 
 		}
+	// int net_idx = rand() % n;
+	// 		int path_idx = rand() % (int)max_sinks_set[net_idx].size();
+	// 		max_net = max_nets_set[net_idx][path_idx];
+	// 		max_path_sink_index = max_sinks_set[net_idx][path_idx];
 
-		int net_idx = rand() % n;
-		int path_idx = rand() % (int)max_sinks_set[net_idx].size();
-		max_net = max_nets_set[net_idx][path_idx];
-		max_path_sink_index = max_sinks_set[net_idx][path_idx];
+		for (int i = 0; i < n; i++)
+		{
+			max_net_delay = 0; max_path_delay = 0;
+			for (int x = 0; x < numNet; x++)
+			{
 
+				if (net_delay_record[x] > max_net_delay)
+					max_net_delay = net_delay_record[x];
+
+				if (net_delay_record[x] > current_delay)
+					current_delay = net_delay_record[x];
+
+				for (int y = 0; y < Current[x].sink_num; y++)
+				{
+					if (Current[x].path_delay[y] > max_path_delay && net_delay_record[x] >= 0)
+					{
+						max_path_delay = Current[x].path_delay[y];
+						max_nets_set[i].clear();
+						max_nets_set[i].push_back(x);
+						max_sinks_set[i].clear();
+						max_sinks_set[i].push_back(y);
+					}
+					else if (abs(Current[x].path_delay[y] - max_path_delay) < 1e-3 && net_delay_record[x] >= 0)
+					{
+						max_nets_set[i].push_back(x);
+						max_sinks_set[i].push_back(y);
+					}
+
+				}
+			}
+			top_net_delays.push_back(max_net_delay);
+			top_path_delays.push_back(max_path_delay);
+
+			for (int x = 0; x < numNet; x++)
+			{
+				if (net_delay_record[x] - max_net_delay < 1e-3 && net_delay_record[x] - max_net_delay >= 0)
+					net_delay_record[x] = -1.0;
+			}
+
+		}
 
 		// ---------- (2) 束搜索重新规划路径（含可行性校验） ----------
 		re_route_path(max_net, max_path_sink_index); //重新规划最差路线
@@ -1268,6 +1164,240 @@ void optimize_with_beam_search(double maxTime)
 	}
 
 
+}
+
+
+bool check_result(vector<Net>&Input_Netgroup)
+{
+
+	cout << "There is no new topo file" << endl;
+
+	// 2) 从零统计每对 (u,v) 的 nets_count（无向 + 每 net 只计一次）
+	std::vector<std::vector<int>> nets_count(numFPGA + 1, std::vector<int>(numFPGA + 1, 0));
+	for (int k = 0; k < (int)Input_Netgroup.size(); ++k) {
+		// 无向去重：同一 net 中，同一无向通道只计一次
+		std::unordered_set<long long> used_once_undirected; 
+		used_once_undirected.reserve(512);
+
+		for (int j = 0; j < (int)Input_Netgroup[k].path.size(); ++j) {
+			const auto& edges = Input_Netgroup[k].path[j];
+			for (int m = 0; m < (int)edges.size(); ++m) {
+				int u = edges[m].first;
+				int v = edges[m].second;
+				if (u == v) continue;
+
+				// 规范为无向 (a<b)
+				int a = (u < v) ? u : v;
+				int b = (u < v) ? v : u;
+				long long key = ( (long long)a << 32 ) | (unsigned int)b;
+
+				if (used_once_undirected.insert(key).second) {
+					// 对称计数，保证矩阵对称
+					nets_count[a][b] += 1;
+					nets_count[b][a] += 1;
+				}
+			}
+		}
+	}
+
+
+	// ---------- (A) 单次(i<j)循环合并：改动规模 + TDM + 容量累计 ----------
+	int total_physical_links = 0;     // Σ weight(i,j)
+	int delta_sum = 0;                // Σ |delta(i,j)|
+	vector<int> sum_conn(numFPGA + 1, 0); // 每个FPGA的对外连接数
+	vector<int> change_per_fpga(numFPGA + 1, 0);//每个FPGA的对外连接变化
+
+
+	cout << endl << "Check FPGA channel capacity constraint" << endl;
+
+	for (int i = 1; i <= numFPGA; ++i) {
+		for (int j = i + 1; j <= numFPGA; ++j) {
+			int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
+
+			total_physical_links += weight_matrix[i][j];
+			int d_abs = abs(delta_weight_matrix[i][j]);
+			delta_sum += d_abs;
+
+			change_per_fpga[i] += d_abs;
+			change_per_fpga[j] += d_abs;
+
+
+			sum_conn[i] += phys;
+			sum_conn[j] += phys;
+
+			// TDM & 物理缺失
+			int nets_on_pair = nets_count[i][j];
+			if (nets_on_pair > 0 && phys == 0) {
+				cout << "[E1] Denominator is zero in ratio calculation: pair(" << i << "," << j
+					<< ") nets=" << nets_on_pair << ", phys=0\n";//ratio计算中分母为0
+				return false;
+			}else if (phys == 0) {
+				continue; // nets=0且phys=0，跳过
+			}
+
+			// TDM计算：先 ceil(nets/phys)，再 ceil 到8的倍数，≤512
+			int tdm_q = (((int)ceil((double)nets_on_pair / (double)phys) + 7) & ~7);
+
+			if (tdm_q > 512) {
+				std::cout << "[E2] TDM ratio exceeds limit for pair(" << i << "," << j << "): ceil("
+					<< nets_on_pair << "/" << phys << ")=" << ceil(nets_on_pair / phys)
+					<< ", quantized=" << tdm_q << " > 512\n";//TDM 超限
+				return false;
+			}
+		}
+	}
+
+	cout << "All FPGA channel capacity satisfies the constraint" << endl;
+	cout << "Total number of connection is: " << std::fixed << std::setprecision(1)
+		<< (double)total_physical_links << endl << endl;
+
+	// ---------- (B) 改动规模约束 ----------
+	if (delta_sum > total_physical_links * 0.3) {
+		std::cout << "[E3] Total delta change exceeds limit: delta_sum=" << delta_sum
+			<< " > limit=" << total_physical_links * 0.3 << "\n";//改动规模超限
+		return false;
+	}
+
+	cout << "Check channel reconfiguration scope constraint" << endl;
+	cout << "Detail info of changing connections :" << endl;
+
+
+
+
+	for (int f = 1; f <= numFPGA; ++f)
+		cout << "Number of changing connections of FPGA F" << f << " is: "
+		<< change_per_fpga[f] << endl;
+
+	cout << "Total number of changing connections: " << std::fixed << std::setprecision(1)
+		<< (double)delta_sum << endl;
+	cout << "The variation in connection channels satisfies the constraints" << endl << endl;
+
+
+	// ---------- (C) 通道容量约束 ----------
+	for (int i = 1; i <= numFPGA; ++i) {
+		if (sum_conn[i] > FPGA_max_weight[i]) {
+			std::cout << "[E4] Channel capacity exceeded: FPGA " << i
+				<< " total=" << sum_conn[i]
+				<< " > max=" << FPGA_max_weight[i] << "\n";//容量超限
+				return false;
+		}
+	}
+
+	cout << "Check the max ratio constraints:" << endl;
+	for (int i = 1; i <= numFPGA; ++i) {
+		for (int j = i + 1; j <= numFPGA; ++j) {
+			if (nets_count[i][j] <= 0) continue; // 跳过net=0的pair
+
+			int nets_on_pair = nets_count[i][j];
+			int phys = weight_matrix[i][j] + delta_weight_matrix[i][j];
+
+			cout << "FPGA pair (" << i << ", " << j << "): "
+				<< nets_on_pair << " nets" << endl;
+			cout << "FPGA pair (" << i << ", " << j << ") has "
+				<< phys << " connections, limit is " << 512 * phys << "!" << endl;
+		}
+	}
+	cout << "All FPGA pairs are within the net limit." << endl << endl;
+
+
+	// ---------- (D) 路径检查 ----------
+
+	for (int k = 0; k < (int)Input_Netgroup.size(); ++k) {
+
+		for (int t = 0; t < (int)Input_Netgroup[k].path.size(); ++t) {
+
+
+			if (!Input_Netgroup[k].path[t].empty())
+			{
+				int s_fpga = nodes_FPGA[Input_Netgroup[k].source_node];
+				int g_fpga = nodes_FPGA[Input_Netgroup[k].sink_nodes[t]];
+
+				int cur = s_fpga;
+
+				for (int e = 0; e < (int)Input_Netgroup[k].path[t].size(); ++e) {
+					int u = Input_Netgroup[k].path[t][e].first;
+					int v = Input_Netgroup[k].path[t][e].second;
+					int final_uv = weight_matrix[u][v] + delta_weight_matrix[u][v];
+
+
+					// 有向连续性
+					if (u != cur) {
+						std::cout << "[E5] Logical path discontinuity in net " << k
+							<< " sinkIdx " << t << " cur=" << cur
+							<< " edge=(" << u << "," << v << ")\n";
+						return false;
+					}
+					cur = v;
+				}
+			}
+
+
+		}
+	}
+
+
+	cout << "Check whether all nets have routed" << endl;
+	cout << "All nets has routed" << endl << endl;
+
+
+	// ---------- (E) 计算得分 ----------
+	cout << "Calculate the score of max delay: " << endl;
+	double score_max_delay = 0.0;
+
+
+	for (int k = 0; k < (int)Input_Netgroup.size(); ++k) {
+		for (int t = 0; t < (int)Input_Netgroup[k].path_delay.size(); ++t)
+			score_max_delay = max(score_max_delay, Input_Netgroup[k].path_delay[t]);
+	}
+	cout << "Score of max delay =  " << std::fixed << std::setprecision(1)
+		<< score_max_delay << endl;
+
+
+
+
+	//重算版本
+// ---------- (E) 计算得分（从零重算 + 仅比较最终结果；使用下标for写法） ----------
+	std::cout << "Calculate the score of max delay (from scratch): " << std::endl;
+
+
+
+	// 3) 按原口径重算所有路径的延迟，并取最大（分母用 weight_matrix，不含 delta）
+	double recomputed_max_delay = 0.0;
+	for (int k = 0; k < (int)Input_Netgroup.size(); ++k) {
+		for (int j = 0; j < (int)Input_Netgroup[k].path.size(); ++j) {
+			double d = 0.0;
+			const auto& edges = Input_Netgroup[k].path[j];
+			for (int m = 0; m < (int)edges.size(); ++m) {
+				int u = edges[m].first;
+				int v = edges[m].second;
+				if (u == v) continue;
+
+				// 与 calculate_su 保持一致：30 + 0.7 * ceil8(nets/weight)
+				d += 30 + 0.7 * ceil8(
+					(double)nets_count[u][v] / (double)weight_matrix[u][v]
+				);
+			}
+			if (d > recomputed_max_delay) {
+				recomputed_max_delay = d;
+			}
+		}
+	}
+
+	std::cout << "nets_count: " << std::endl;
+	for (int i = 1; i <= numFPGA; ++i) {
+		for (int j = 1; j <= numFPGA; ++j) {
+			std::cout << nets_count[i][j] << ' ';
+		}
+		std::cout << std::endl;
+	}
+
+	// 4) 比较最终结果（只比较最大值）
+	if (recomputed_max_delay != score_max_delay) {
+		std::cerr << "path_delay计算错误：最大延迟不一致，期望="
+				<< score_max_delay << " 实际=" << recomputed_max_delay << std::endl;
+		return false;
+	}
+	return true;
 }
 
 
@@ -1350,10 +1480,12 @@ int main(int argc, char** argv)
 	read_instance();
 
 	// 运行时间限制
-	double maxRunTime = 10000;
+	double maxRunTime = 10;
 
 	//运行主算法
 	optimize_with_beam_search(maxRunTime);
+
+	check_result(Global);
 	// 输出结果
 	file_output();
 
