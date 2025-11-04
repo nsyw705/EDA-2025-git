@@ -27,10 +27,11 @@ using namespace std;
 #define SDF_MAX(a,b) ((a)>(b)?(a):(b))
 #define SDF_MIN(a,b) ((a)<(b)?(a):(b))
 
-#define BEAMWIDTH 3
-#define Maxdepth 8
-#define Max_kdepth 5
-#define SHORTESTROB 0.9
+#define BEAMWIDTH 3//邻域1参数
+#define Maxdepth 8 //邻域1参数
+#define Max_kdepth 5//邻域1参数
+#define SHORTESTROB 0.9//邻域2参数
+#define ADJUSTRATIO 0.3//邻域3参数
 
 //***********************************************************//
 char* rep;
@@ -807,6 +808,78 @@ bool check_result(vector<Net>& Input_Netgroup, int** delta_weight_M)
 }
 
 
+void file_output()//输出design.route.out
+{
+	std::ofstream out("design.route.out", std::ios::out);
+	if (!out.is_open())
+		return;
+	vector<int> order1(numNet);
+	iota(order1.begin(), order1.end(), 0);
+	stable_sort(order1.begin(), order1.end(),
+		[](int a, int b)
+		{ return Global_net_delay[a] > Global_net_delay[b]; });
+	//cout << Global_net_delay[order1[0]] << "j" << endl;
+
+	out.setf(std::ios::fixed);
+	out << std::setprecision(1);
+
+	for (int idx : order1)
+	{
+		if (Global_net_delay[idx] <= 0.0)
+			continue;
+
+		auto& paths = Global[idx].path;
+		auto& pdelay = Global[idx].path_delay;
+
+		bool printed_header = false;
+		vector<int> order2(pdelay.size());
+		iota(order2.begin(), order2.end(), 0);
+		stable_sort(order2.begin(), order2.end(),
+			[idx](int a, int b)
+			{ return Global[idx].path_delay[a] > Global[idx].path_delay[b]; });
+
+		for (int j : order2)
+		{
+			if (pdelay[j] <= 0.0)
+				continue;
+			auto& edges = paths[j];
+			if (edges.empty())
+				continue;
+
+			if (!printed_header)
+			{
+				out << "[net " << (idx + 1) << "]\n";
+				printed_header = true;
+			}
+
+			out << '[';
+			out << edges.front().first;
+			for (int e = 0; e < edges.size(); ++e)
+			{
+				out << ',' << edges[e].second;
+			}
+			out << "] [" << pdelay[j] << "]\n";
+		}
+	}
+	out.close();
+
+
+	//通道重新组网输出
+	std::ofstream matrixout("design.newtopo", std::ios::out);
+	if (!matrixout.is_open())
+		return;
+
+	for (int x = 1; x <= numFPGA; x++)
+	{
+		matrixout << "F" << x << ": ";
+		for (int y = 1; y < numFPGA; y++)
+			matrixout << weight_matrix[x][y] + global_delta_weight_matrix[x][y] << ',';
+		matrixout << weight_matrix[x][numFPGA] + global_delta_weight_matrix[x][numFPGA];
+		matrixout << "\n";
+	}
+	matrixout.close();
+}
+
 bool SA_judge(double current_obj, double new_obj)
 {
 	if (new_obj < current_obj)
@@ -1217,7 +1290,13 @@ void calculate_temp_sol(vector<Net>& S, int** delta_nets_count_M, double& obj) /
 			if (path[j].size() == 0) { continue; }
 			for (auto edge : path[j])
 			{
-				if (edge.first != edge.second) { each_path_delay += 30 + 0.7 * ceil8((double)nets_count_matrix[edge.first][edge.second] / (weight_matrix[edge.first][edge.second] + delta_nets_count_M[edge.first][edge.second])); }
+				if (edge.first != edge.second) 
+				{ 
+					if ((weight_matrix[edge.first][edge.second] + delta_nets_count_M[edge.first][edge.second]) > 0)
+						each_path_delay += 30 + 0.7 * ceil8((double)nets_count_matrix[edge.first][edge.second] / (weight_matrix[edge.first][edge.second] + delta_nets_count_M[edge.first][edge.second]));
+					else
+						cout << "tunnel removed but route needed! ";
+				}
 			}
 			if (each_path_delay > temp_net_delay[i]) { temp_net_delay[i] = each_path_delay; }
 		}
@@ -1532,7 +1611,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 		unordered_set<int> checkcf;
 		if (top_k_paths[i].back().second != sink_fpga) { continue; }
 		for (int j = 0; j < top_k_paths[i].size(); j++) {
-			if (checkcf.find(top_k_paths[i][j].second) == checkcf.end()) {//保证不重复访问节点
+			if (checkcf.find(top_k_paths[i][j].second) == checkcf.end()) {
 				checkcf.insert(top_k_paths[i][j].second);
 			}
 			else
@@ -1648,7 +1727,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 		if (a > b) { arc_add = { b, a }; }
 		else { arc_add = { a, b }; }
 
-		if (tempCurrent[net_id].path_map.find(arc_add) == tempCurrent[net_id].path_map.end() || tempCurrent[net_id].path_map[arc_add]==0) // 在net中查找此边的使用次数
+		if (tempCurrent[net_id].path_map.find(arc_add) == tempCurrent[net_id].path_map.end()) // 在net中查找此边的使用次数
 		{
 			temp_nets_count_matrix[a][b]++; temp_nets_count_matrix[b][a]++;
 			tempCurrent[net_id].path_map[arc_add] = 1;
@@ -1733,25 +1812,27 @@ void re_route_path(int net_id, int sink_index) //邻域1
 	//	exit(-1);
 	//}
 
-	double check_max_delay = 0;
-	for (int x = 0; x < numNet; x++)
-		if (net_delay[x] > check_max_delay)
-			check_max_delay = net_delay[x];
-	if (abs(check_max_delay - temp_net_delay) > 1e-3)
-	{
-		cout << "unmatch in N1: reported " << temp_net_delay << " actual " << check_max_delay;
-		exit(-1);
-	}
+	//double check_max_delay = 0;
+	//for (int x = 0; x < numNet; x++)
+	//	if (net_delay[x] > check_max_delay)
+	//		check_max_delay = net_delay[x];
+	//if (abs(check_max_delay - temp_net_delay) > 1e-3)
+	//{
+	//	cout << "unmatch in N1: reported " << temp_net_delay << " actual " << check_max_delay;
+	//	exit(-1);
+	//}
 
 
-	if (temp_net_delay < Global_delay)
+	if (temp_net_delay < Global_delay && abs(temp_net_delay- Global_delay)>1e-3)
 	{
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		cout << "Global improved in N1: from " << Global_delay << " to " << temp_net_delay << endl;
-		//bool check = check_result(Global, global_delta_weight_matrix);
-		//if (!check) exit(-1);
 		Global_delay = temp_net_delay;
+
+		bool check = check_result(Global, global_delta_weight_matrix);
+		if (!check) exit(-1);
+
 	}
 
 	for (int x = 0; x < numFPGA + 1; x++) { delete[] temp_nets_count_matrix[x]; }
@@ -2085,24 +2166,27 @@ void neighbor_replan2(int net_id, int sink_index)
 	//	exit(-1);
 	//}
 
-	double check_max_delay = 0;
-	for (int x = 0; x < numNet; x++)
-		if (net_delay[x] > check_max_delay)
-			check_max_delay = net_delay[x];
+	//double check_max_delay = 0;
+	//for (int x = 0; x < numNet; x++)
+	//	if (net_delay[x] > check_max_delay)
+	//		check_max_delay = net_delay[x];
 
 
-	if (abs(candidate_delay - check_max_delay) > 1e-3)
-	{
-		cout << "unmatch in N2: reported " << candidate_delay << " actual " << check_max_delay;
-		exit(-1);
-	}
+	//if (abs(candidate_delay - check_max_delay) > 1e-3)
+	//{
+	//	cout << "unmatch in N2: reported " << candidate_delay << " actual " << check_max_delay;
+	//	exit(-1);
+	//}
 
 
-	if (current_obj < Global_delay)
+	if (current_obj < Global_delay && abs(current_obj- Global_delay)>1e-3)
 	{
 		cout << "Global improved in N2: " << Global_delay << " to " << current_obj << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		Global_delay = current_obj;
+
+		bool check = check_result(Global, global_delta_weight_matrix);
+		if (!check) exit(-1);
 	}
 
 
@@ -2179,7 +2263,7 @@ void choose_worst_path(vector<Net> S, int& net_id, int& sink_id)
 }
 
 
-void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, int& added_count, int* temp_fpga_weight, int** temp_delta_weight_matrix)
+void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, int& added_count, int* temp_fpga_weight, int** temp_delta_weight_matrix, vector<pair<int, int>>& arc_record)
 {
 	int source_node = Current[net_index].source_node; //net中的起点
 	int sink_node = Current[net_index].sink_nodes[sink_index]; // net中的终点
@@ -2323,7 +2407,7 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 			else added_arc = { b,a };
 
 
-			added_arc_record.push_back(added_arc);
+			arc_record.push_back(added_arc);
 
 			break;
 		}
@@ -2366,7 +2450,7 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 
 			if (a < b) added_arc = { a,b };
 			else added_arc = { b,a };
-			added_arc_record.push_back(added_arc);
+			arc_record.push_back(added_arc);
 
 			break;
 		}
@@ -2429,7 +2513,7 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 			if (a < b) added_arc = { a,b };
 			else added_arc = { b,a };
 
-			added_arc_record.push_back(added_arc);
+			arc_record.push_back(added_arc);
 
 			break;
 		}
@@ -2476,7 +2560,7 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 			if (a < b) added_arc = { a,b };
 			else added_arc = { b,a };
 
-			added_arc_record.push_back(added_arc);
+			arc_record.push_back(added_arc);
 			break;
 		}
 
@@ -2500,7 +2584,7 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 			if (source_fpga < sink_fpga) added_arc = { source_fpga,sink_fpga };
 			else added_arc = { sink_fpga,source_fpga };
 
-			added_arc_record.push_back(added_arc);
+			arc_record.push_back(added_arc);
 
 			break;
 		}
@@ -2566,14 +2650,14 @@ void random_rule_add_tunnel(int net_index, int sink_index, int add_tunnel_num, i
 void add_tunnel(int net_index, int sink_index) //邻域3
 {
 	// ---------- (0) 数据结构与参数设置  ----------
-	double adjust_ratio = 0.3;
+	//double adjust_ratio = 0.3;
 	int add_tunnel_num = (numTunnel * 0.3) - numAddedTunnel; // 增加的通道最大数量
 	int added_count = 0; //实际增加的通道数量
 
 	int** temp_delta_weight_matrix = new int* [numFPGA + 1]; //变化的通道记录，用于搜索期间暂存
 	int* temp_fpga_weight = new int[numFPGA + 1];
 
-
+	vector<pair<int, int>> temp_added_arc_record;
 
 	for (int x = 0; x < numFPGA + 1; x++)
 	{
@@ -2583,41 +2667,77 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 			temp_delta_weight_matrix[x][y] = delta_weight_matrix[x][y];
 	}
 
+	for (auto each : added_arc_record)
+		temp_added_arc_record.push_back(each);
 
 
 	// ---------- (1) 增加通道阶段  ----------
-	random_rule_add_tunnel(net_index, sink_index, add_tunnel_num, added_count, temp_fpga_weight, temp_delta_weight_matrix);
+	random_rule_add_tunnel(net_index, sink_index, add_tunnel_num, added_count, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
 	//cout << "---------------------phase 1: add completed---------------------" << endl;
 	
 
 
 	// ---------- (2) 随机调整通道阶段  ----------
-	int adjust_num = (added_count + numAddedTunnel) * adjust_ratio;
+	int adjust_num = (added_count + numAddedTunnel) * ADJUSTRATIO;
 	int adjust_count = 0;
 	int actual_adjust = 0;
 
+	unordered_set<pair<int, int>, PairHash> routed_used_added_arcs;
+	for (int x = 0; x < numNet; x++)
+		for (int y = 0; y < Current[x].sink_num; y++)
+			for (auto arc : Current[x].path[y])
+			{
+				int a = arc.first; int b = arc.second;
+				if (weight_matrix[a][b] == 0 && temp_delta_weight_matrix[a][b] > 0)
+				{
+					pair<int, int> record_arc = {};
+					if (a < b) record_arc = { a,b };
+					else record_arc = { b,a };
+					routed_used_added_arcs.insert(record_arc);
+				}
+			}
+		
+	vector<bool> is_used;
+	for (int x = 0; x < (int)temp_added_arc_record.size(); x++)
+		is_used.push_back(false);
+
+
 	while (adjust_count < adjust_num) //随机取消已增加的通道
 	{
-		int adjust_idx = rand() % (int)added_arc_record.size();
-		auto adjust_arc = added_arc_record[adjust_idx];
+		int adjust_idx = rand() % (int)temp_added_arc_record.size();
+		while(is_used[adjust_idx])
+			adjust_idx = rand() % (int)temp_added_arc_record.size();
+		auto adjust_arc = temp_added_arc_record[adjust_idx];
 		int f_a = adjust_arc.first; int f_b = adjust_arc.second;
 
 		if (temp_delta_weight_matrix[f_a][f_b] == 0 || temp_delta_weight_matrix[f_b][f_a] == 0)
 		{
 			cout << "arc has no tunnel but random seleced! (" << f_a << "," << f_b << ")" << endl;
+			file_output();
 			exit(-1);
 		}
+
+		pair<int, int> format_arc = {};
+		if (f_a < f_b) format_arc = { f_a,f_b };
+		else format_arc = { f_b,f_a };
+		if (routed_used_added_arcs.find(format_arc) != routed_used_added_arcs.end())
+		{
+			is_used[adjust_idx] = true;
+			continue;
+		}
+		
+
 		temp_delta_weight_matrix[f_a][f_b]--;
 		temp_delta_weight_matrix[f_b][f_a]--;
 		temp_fpga_weight[f_a]--;
 		temp_fpga_weight[f_b]--;
 
-		added_arc_record.erase(added_arc_record.begin() + adjust_idx);
+		temp_added_arc_record.erase(temp_added_arc_record.begin() + adjust_idx);
 
 		adjust_count++;
 	}
 
-	random_rule_add_tunnel(net_index, sink_index, adjust_count, actual_adjust, temp_fpga_weight, temp_delta_weight_matrix);
+	random_rule_add_tunnel(net_index, sink_index, adjust_count, actual_adjust, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
 
 	//cout << "---------------------phase 2: change completed---------------------" << endl;
 
@@ -2640,6 +2760,7 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 	calculate_temp_sol(Current, temp_delta_weight_matrix, new_obj);
 
 	bool judge = SA_judge(current_obj, new_obj);
+	//cout << "N3 judge: " << judge << endl;
 
 	if (judge)
 	{
@@ -2650,29 +2771,35 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 				delta_weight_matrix[x][y] = temp_delta_weight_matrix[x][y];
 		}
 		numAddedTunnel = numAddedTunnel + added_count - adjust_num + actual_adjust;
+
+		added_arc_record.clear();
+		for (auto each : temp_added_arc_record)
+			added_arc_record.push_back(each);
+		calculate_su(Current);
 	}
 
-	calculate_su(Current);
+	
 
 	//bool c = check_result(Current);
-	double check_max_delay = 0;
-	for (int x = 0; x < numNet; x++)
-		if (net_delay[x] > check_max_delay)
-			check_max_delay = net_delay[x];
-	if (abs(check_max_delay - new_obj) > 1e-3)
-	{
-		cout << "unmatch in N3: reported " << current_obj << " actual " << check_max_delay;
-		exit(-1);
-	}
+	//double check_max_delay = 0;
+	//for (int x = 0; x < numNet; x++)
+	//	if (net_delay[x] > check_max_delay)
+	//		check_max_delay = net_delay[x];
+	//if (abs(check_max_delay - new_obj) > 1e-3)
+	//{
+	//	cout << "unmatch in N3: reported " << current_obj << " actual " << check_max_delay;
+	//	exit(-1);
+	//}
 
 
-	if (new_obj < Global_delay)
+	if (new_obj < Global_delay && abs(new_obj- Global_delay)>1e-3)
 	{
 		cout << "Global improved in N3: "<<"from " << Global_delay << " to " << new_obj << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
-		//bool check = check_result(Global, global_delta_weight_matrix);
-		//if (!check) exit(-1);
 		Global_delay = new_obj;
+
+		bool check = check_result(Global, global_delta_weight_matrix);
+		if (!check) exit(-1);
 	}
 
 
@@ -2685,77 +2812,6 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 	delete[] temp_fpga_weight;
 }
 
-void file_output()//输出design.route.out
-{
-	std::ofstream out("design.route.out", std::ios::out);
-	if (!out.is_open())
-		return;
-	vector<int> order1(numNet);
-	iota(order1.begin(), order1.end(), 0);
-	stable_sort(order1.begin(), order1.end(),
-		[](int a, int b)
-		{ return Global_net_delay[a] > Global_net_delay[b]; });
-	//cout << Global_net_delay[order1[0]] << "j" << endl;
-
-	out.setf(std::ios::fixed);
-	out << std::setprecision(1);
-
-	for (int idx : order1)
-	{
-		if (Global_net_delay[idx] <= 0.0)
-			continue;
-
-		auto& paths = Global[idx].path;
-		auto& pdelay = Global[idx].path_delay;
-
-		bool printed_header = false;
-		vector<int> order2(pdelay.size());
-		iota(order2.begin(), order2.end(), 0);
-		stable_sort(order2.begin(), order2.end(),
-			[idx](int a, int b)
-			{ return Global[idx].path_delay[a] > Global[idx].path_delay[b]; });
-
-		for (int j : order2)
-		{
-			if (pdelay[j] <= 0.0)
-				continue;
-			auto& edges = paths[j];
-			if (edges.empty())
-				continue;
-
-			if (!printed_header)
-			{
-				out << "[net " << (idx + 1) << "]\n";
-				printed_header = true;
-			}
-
-			out << '[';
-			out << edges.front().first;
-			for (int e = 0; e < edges.size(); ++e)
-			{
-				out << ',' << edges[e].second;
-			}
-			out << "] [" << pdelay[j] << "]\n";
-		}
-	}
-	out.close();
-
-
-	//通道重新组网输出
-	std::ofstream matrixout("design.newtopo", std::ios::out);
-	if (!matrixout.is_open())
-		return;
-
-	for (int x = 1; x <= numFPGA; x++)
-	{
-		matrixout << "F" << x << ": ";
-		for (int y = 1; y < numFPGA; y++)
-			matrixout << weight_matrix[x][y] + global_delta_weight_matrix[x][y] << ',';
-		matrixout << weight_matrix[x][numFPGA] + global_delta_weight_matrix[x][numFPGA];
-		matrixout << "\n";
-	}
-	matrixout.close();
-}
 
 void optimize_with_beam_search()
 {
@@ -2767,21 +2823,23 @@ void optimize_with_beam_search()
 	int iter = 0;
 	while (((clock() - beginTime) / CLOCKS_PER_SEC) < maxRunTime)
 	{
-		for (int i = 0; i < 20; i++)
+		for (int i = 0; i < 10; i++)
 		{
 			if (((clock() - beginTime) / CLOCKS_PER_SEC) > maxRunTime) break;
 			int net_index = -1, sink_index = -1;
 			choose_worst_path(Current, net_index, sink_index);
 
 			int neighbor_choose = rand() % 3;
+			//neighbor_choose = 2;
+			//double n_search_begin = clock();
 			switch (neighbor_choose)
 			{
-			    case(0): { re_route_path(net_index, sink_index);   break; }//邻域1
-				case(1):{neighbor_replan2(net_index, sink_index);   break;}//邻域2
-				case(2):{add_tunnel(net_index, sink_index);   break;}//邻域3
+			    case(0): { re_route_path(net_index, sink_index);    break; }//邻域1 cout <<i<< "N1: ";
+				case(1):{neighbor_replan2(net_index, sink_index);   break;}//邻域2 cout<<i << "N2: ";
+				case(2): { add_tunnel(net_index, sink_index);   break; }//邻域3 cout <<i<< "N3: ";
 				default:break;
 			}
-
+			//cout << (clock() - n_search_begin) / CLOCKS_PER_SEC << endl;
 			//cout << "outer check: \n";
 			//bool check = check_result(Global, global_delta_weight_matrix);
 			//if (!check) exit(-1);
