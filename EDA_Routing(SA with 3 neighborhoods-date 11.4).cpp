@@ -1688,7 +1688,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 
 	//*******************重计算全net延迟，使用全局tempCurrent复制了Current原值，并假设接受变化后重新计算，后期可尝试优化**************************
 	for (int x = 0; x < numFPGA + 1; x++) {
-		temp_nets_count_matrix[x] = new int[numFPGA + 1];
+		// temp_nets_count_matrix[x] = new int[numFPGA + 1];//前面还没有delete[ ]
 		for (int y = 0; y < numFPGA + 1; y++)
 			temp_nets_count_matrix[x][y] = nets_count_matrix[x][y];
 	}
@@ -2012,7 +2012,7 @@ void neighbor_replan2(int net_id, int sink_index)
 
 	//********************重计算全net延迟，使用全局tempCurrent复制了tempCurrent原值，并假设接受变化后重新计算，后期可尝试优化********************//
 	for (int x = 0; x < numFPGA + 1; x++) {
-		temp_nets_count_matrix[x] = new int[numFPGA + 1];
+		// temp_nets_count_matrix[x] = new int[numFPGA + 1];
 		for (int y = 0; y < numFPGA + 1; y++)
 			temp_nets_count_matrix[x][y] = nets_count_matrix[x][y];
 	}
@@ -2184,6 +2184,8 @@ void neighbor_replan2(int net_id, int sink_index)
 	{
 		cout << "Global improved in N2: " << Global_delay << " to " << current_obj << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
+		std::copy(net_delay, net_delay + numNet, Global_net_delay);
+
 		Global_delay = current_obj;
 
 		bool check = check_result(Global, global_delta_weight_matrix);
@@ -2796,7 +2798,7 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 	if (new_obj < Global_delay && abs(new_obj- Global_delay)>1e-3)
 	{
 		cout << "Global improved in N3: "<<"from " << Global_delay << " to " << new_obj << endl;
-		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
+		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		Global_delay = new_obj;
 
 		bool check = check_result(Global, global_delta_weight_matrix);
@@ -2878,7 +2880,7 @@ int main(int argc, char** argv)
 	read_instance();
 
 	// 运行时间限制
-	maxRunTime = 600;
+	maxRunTime = 100;
 
 	//运行主算法
 	beginTime = clock();
