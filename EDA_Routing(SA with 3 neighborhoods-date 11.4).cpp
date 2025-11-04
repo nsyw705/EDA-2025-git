@@ -30,7 +30,7 @@ using namespace std;
 #define BEAMWIDTH 3//邻域1参数
 #define Maxdepth 8 //邻域1参数
 #define Max_kdepth 5//邻域1参数
-#define SHORTESTROB 0.9//邻域2参数
+#define SHORTESTROB 0.8//邻域2参数
 #define ADJUSTRATIO 0.3//邻域3参数
 
 //***********************************************************//
@@ -235,17 +235,23 @@ void read_instance()
 	char designTopoName[50];
 	char designFpgaOutName[50];
 
-	strcpy_s(temp_caseName, caseName);
-	strcat_s(temp_caseName, sizeof(temp_caseName), "/");
-	strcpy_s(designInfoName, temp_caseName);
-	strcpy_s(designNetName, temp_caseName);
-	strcpy_s(designTopoName, temp_caseName);
-	strcpy_s(designFpgaOutName, temp_caseName);
+	// strcpy_s(temp_caseName, caseName);
+	// strcat_s(temp_caseName, sizeof(temp_caseName), "/");
+	// strcpy_s(designInfoName, temp_caseName);
+	// strcpy_s(designNetName, temp_caseName);
+	// strcpy_s(designTopoName, temp_caseName);
+	// strcpy_s(designFpgaOutName, temp_caseName);
 
-	strcat_s(designInfoName, sizeof(designInfoName), designInfo);
-	strcat_s(designNetName, sizeof(designNetName), designNet);
-	strcat_s(designTopoName, sizeof(designTopoName), designTopo);
-	strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
+	// strcat_s(designInfoName, sizeof(designInfoName), designInfo);
+	// strcat_s(designNetName, sizeof(designNetName), designNet);
+	// strcat_s(designTopoName, sizeof(designTopoName), designTopo);
+	// strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
+
+	std::snprintf(temp_caseName, sizeof temp_caseName, "%s/", caseName);
+	std::snprintf(designInfoName, sizeof designInfoName, "%s%s", temp_caseName, designInfo);
+	std::snprintf(designNetName, sizeof designNetName, "%s%s", temp_caseName, designNet);
+	std::snprintf(designTopoName, sizeof designTopoName, "%s%s", temp_caseName, designTopo);
+	std::snprintf(designFpgaOutName, sizeof designFpgaOutName, "%s%s", temp_caseName, designFpgaOut);
 
 	R_max = 512; //最大TDM比率
 	T = 300.0;
@@ -2880,7 +2886,7 @@ int main(int argc, char** argv)
 	read_instance();
 
 	// 运行时间限制
-	maxRunTime = 100;
+	maxRunTime = 600;
 
 	//运行主算法
 	beginTime = clock();
