@@ -547,7 +547,7 @@ void check_read_instance() {
 }
 
 
-int ceil8(double x) { return static_cast<int>(std::ceil(x / 8.0) * 8.0); } // 取8的倍数
+inline int ceil8(double x) { return static_cast<int>(std::ceil(x / 8.0) * 8.0); } // 取8的倍数
 
 bool check_result(vector<Net>& Input_Netgroup, int** delta_weight_M)
 {
@@ -1549,6 +1549,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 				temp_nets_count_matrix[a][b]--; temp_nets_count_matrix[b][a]--;
 			}
 			target_net.path_map[arc]--;
+			if(target_net.path_map[arc]==0){ target_net.path_map.erase(arc);}
 		}
 	}
 
@@ -1648,7 +1649,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 		if (a > b) { arc_add_2 = { b, a }; }
 		else { arc_add_2 = { a, b }; }
 
-		if (target_net.path_map.find(arc_add_2) == target_net.path_map.end()) // 在net中查找此边的使用次数
+		if (target_net.path_map.find(arc_add_2) == target_net.path_map.end() || target_net.path_map[arc_add_2]==0) // 在net中查找此边的使用次数
 		{
 			temp_nets_count_matrix[a][b]++;
 			temp_nets_count_matrix[b][a]++;
