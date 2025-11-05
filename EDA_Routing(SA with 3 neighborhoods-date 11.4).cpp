@@ -900,7 +900,7 @@ bool SA_judge(double current_obj, double new_obj)
 		else
 			return false;
 	}
-
+	return true;
 }
 
 

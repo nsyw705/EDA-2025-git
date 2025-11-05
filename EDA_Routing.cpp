@@ -28,7 +28,6 @@ using namespace std;
 #define SDF_MIN(a,b) ((a)<(b)?(a):(b))
 
 #define BEAMWIDTH 3//邻域1参数
-#define Maxdepth 8 //邻域1参数
 #define Max_kdepth 5//邻域1参数
 #define SHORTESTROB 0.8//邻域2参数
 #define ADJUSTRATIO 0.3//邻域3参数
@@ -234,18 +233,6 @@ void read_instance()
 	char designNetName[50];
 	char designTopoName[50];
 	char designFpgaOutName[50];
-
-	// strcpy_s(temp_caseName, caseName);
-	// strcat_s(temp_caseName, sizeof(temp_caseName), "/");
-	// strcpy_s(designInfoName, temp_caseName);
-	// strcpy_s(designNetName, temp_caseName);
-	// strcpy_s(designTopoName, temp_caseName);
-	// strcpy_s(designFpgaOutName, temp_caseName);
-
-	// strcat_s(designInfoName, sizeof(designInfoName), designInfo);
-	// strcat_s(designNetName, sizeof(designNetName), designNet);
-	// strcat_s(designTopoName, sizeof(designTopoName), designTopo);
-	// strcat_s(designFpgaOutName, sizeof(designFpgaOutName), designFpgaOut);
 
 	std::snprintf(temp_caseName, sizeof temp_caseName, "%s/", caseName);
 	std::snprintf(designInfoName, sizeof designInfoName, "%s%s", temp_caseName, designInfo);
@@ -900,7 +887,7 @@ bool SA_judge(double current_obj, double new_obj)
 		else
 			return false;
 	}
-
+	return true;
 }
 
 
@@ -967,7 +954,7 @@ double single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M, double
 			}
 		}
 
-		if (u == sink_fpga)
+		if (u == sink_fpga||u==-1)
 			break;
 		visited[u] = true;
 		for (int v = 1; v <= numFPGA; v++)
@@ -1012,7 +999,7 @@ double single_dijkstra(int source_fpga, int sink_fpga, int** net_count_M, double
 	return delay_value;
 }
 
-vector<pair<int, int>> single_dijkstra_1(int source_fpga, int sink_fpga, int** net_count_M)//找最短路径 直接覆盖
+vector<pair<int, int>> single_dijkstra_1(int source_fpga, int sink_fpga, int** net_count_M,vector<int>&forbid)//找最短路径 直接覆盖
 {
 	int* best_path = new int[numFPGA]; // 新建一条路径，用于存储新找的最优路径
 
@@ -1050,11 +1037,13 @@ vector<pair<int, int>> single_dijkstra_1(int source_fpga, int sink_fpga, int** n
 			}
 		}
 
-		if (u == sink_fpga)
+		if (u == sink_fpga||u==-1)
 			break;
 		visited[u] = true;
 		for (int v = 1; v <= numFPGA; v++)
 		{
+			if (!forbid.empty() && find(forbid.begin(),forbid.end(),v)!=forbid.end())
+				continue;
 			if (weight_matrix[u][v] + delta_weight_matrix[u][v] == 0)
 				continue;
 			if (visited[v])
@@ -1070,7 +1059,15 @@ vector<pair<int, int>> single_dijkstra_1(int source_fpga, int sink_fpga, int** n
 			}
 		}
 	}
-
+	//  新增：不可达检查
+	if (prev[sink_fpga] == -1 && source_fpga != sink_fpga)
+	{
+		delete[] dist;
+		delete[] visited;
+		delete[] prev;
+		delete[] best_path;
+		return {{-1,-1}}; // 特殊标记：不可达
+	}
 	int current_v = sink_fpga;
 	int path_length = 0;
 	while (current_v > 0)
@@ -1410,14 +1407,15 @@ void initialize_solution() {//初始化
 // 输出：topk_candidates（按f降序截断到beamK，从o到A、B、C的路径）；
 //      
 //*****************************************************************************************
-void expand_beam_layer_limit_kdepth(int source_fpga, int sink_fpga, int** net_count_M, int& farm_index, vector<pair<int, int>>& new_path, vector<pair<int, int>>& farm_son_index, vector<int>& on_path, int depth) {
+void expand_beam_layer_limit_kdepth(int source_fpga, int sink_fpga, int** net_count_M, int& farm_index, vector<pair<int, int>>& new_path, vector<pair<int, int>>& farm_son_index, vector<int> &on_path, int depth) {
 
 	// 使用类似树的结构将路径存进new_delay; 叶节点是包含sink_fpga;on_path用于去环,farm_son_index,在父节点记录子节点索引的数组。
 	if (source_fpga == sink_fpga) { return; }
 	if (depth >= Max_kdepth) {
 		vector<pair<int, int>>cur_path;
-		cur_path = single_dijkstra_1(source_fpga, sink_fpga, net_count_M);
+		cur_path = single_dijkstra_1(source_fpga, sink_fpga, net_count_M,on_path);
 		if (cur_path.size() <= 0) { return; }
+		if(cur_path.size()==1&&cur_path[0].first==-1&&cur_path[0].second==-1){return ;}
 		if (cur_path[0].first != source_fpga) { cout << "[the current path is error]"; return; }
 		int prev = farm_index;
 		for (auto& x : cur_path) {
