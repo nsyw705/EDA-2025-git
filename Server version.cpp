@@ -37,11 +37,11 @@ using namespace std;
 
 //***********************************************************//
 char* rep;
-//char nameFinalResult[256];
+char nameFinalResult[256];
 char nameSchedule[256];
 char cutname[256];
-//char outRoute[256];
-//char outTopo[256];
+char outRoute[256];
+char outTopo[256];
 //***********************************************************//
 
 char* caseName;
@@ -53,6 +53,8 @@ int seed;
 double maxRunTime;
 double beginTime;
 double bestTime;
+int nonImproved;
+int maxnoImproved;
 
 int numFPGA; //FPGA数量
 int numNet; //Net数量
@@ -62,6 +64,7 @@ int numAddedTunnel; //增加的通道数量
 
 int R_max; //最大TDM比率
 double T; //温度
+double T0;
 
 int** weight_matrix; //FPGA间的连接通道矩阵
 int** delta_weight_matrix; //FPGA间变动的通道数量矩阵
@@ -259,7 +262,7 @@ void read_instance()
 	std::snprintf(designFpgaOutName, sizeof designFpgaOutName, "%s%s", temp_caseName, designFpgaOut);
 
 	R_max = 512; //最大TDM比率
-	T = 300.0;
+	T =500.0;
 
 	ifstream FIC;
 	FIC.open(designInfoName);
@@ -821,8 +824,8 @@ bool check_result(vector<Net>& Input_Netgroup, int** delta_weight_M)
 
 void file_output()//输出design.route.out
 {
-	//strcat(outRoute, "design.route.out");
-	std::ofstream out("design.route.out", std::ios::out);
+	strcat(outRoute, "design.route.out");
+	std::ofstream out(outRoute, std::ios::out);
 	if (!out.is_open())
 		return;
 	vector<int> order1(numNet);
@@ -877,8 +880,8 @@ void file_output()//输出design.route.out
 
 
 	//通道重新组网输出
-	//strcat(outTopo, "design.newtopo");
-	std::ofstream matrixout("design.newtopo", std::ios::out);
+	strcat(outTopo, "design.newtopo");
+	std::ofstream matrixout(outTopo, std::ios::out);
 	if (!matrixout.is_open())
 		return;
 
@@ -901,6 +904,7 @@ bool SA_judge(double current_obj, double new_obj)
 	else if (new_obj >= current_obj)
 	{
 		double prob = exp(-(new_obj - current_obj) / T);
+		//double prob = 1.0 / (1.0 + ((new_obj - current_obj) / T));
 		double rand_value = rand() / double(RAND_MAX);
 		if (rand_value <= prob)
 			return true;
@@ -1232,7 +1236,8 @@ void multi_dijkstra(int source_node, vector<int> sink_node, vector<vector<pair<i
 	fpga_s.insert(k);
 	vector<char> same_fpga(k, 0);//统计源点和终点在同一块fpga的情况
 	int nums_same = 0;
-	for (int i = 0; i < k; ++i) {
+	for (int i = 0; i < k; ++i) 
+	{
 		if (sinks_fpga[i] == source_fpga) {
 			same_fpga[i] = 1; nums_same++;
 		} // 路径为空，不占跨 FPGA 边
@@ -1378,9 +1383,21 @@ void copy_solution(vector<Net>& S1, vector<Net> S2, int** S1_delta_weight_M, int
 	calculate_su(S1);
 }
 
-void initialize_solution() {//初始化
-	for (int n = 0; n < numNet; n++) {
-		auto& net = Current[n];
+void initialize_solution() //初始化
+{
+	vector<int> record;
+
+	for (int n = 0; n < numNet; n++)
+		record.push_back(n);
+
+	for (int n = 0; n < numNet; n++) 
+	{
+		if ((int)record.size() <= 0)break;
+		int n_idx = rand() % (int)record.size();
+		int net_no = record[n_idx];
+		record.erase(record.begin() + n_idx);
+
+		auto& net = Current[net_no];
 		multi_dijkstra(net.source_node, net.sink_nodes, net.path);
 		// 更新累计使用次数
 		pair<int, int> arc = {};
@@ -1415,8 +1432,27 @@ void initialize_solution() {//初始化
 			Global_delay = net_delay[x];
 		}
 	}
+	T = 10*numFPGA;
+	T0 = 10 * numFPGA;
 	std::copy(net_delay, net_delay + numNet, Global_net_delay);
 	copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
+	bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
+	nonImproved = 0;
+
+	if (nonImproved > maxnoImproved)
+		maxnoImproved = nonImproved;
+
+	cout << "Initial: " << Global_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << endl;
+
+	//***********************************************************//
+	ofstream allout(nameFinalResult, ios::out | ios::app);
+	if (allout.is_open())
+	{
+		allout << 0 << " " << Global_delay << " " << bestTime << " " << T <<" "<< maxnoImproved << endl;
+		allout.close();
+	}
+	//***********************************************************//
+	
 }
 
 
@@ -1724,6 +1760,9 @@ void re_route_path(int net_id, int sink_index) //邻域1
 	//模拟退火
 	if (!SA_judge(real_net_delay, temp_net_delay))
 	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 		for (int x = 0; x < numFPGA + 1; x++) { delete[] temp_nets_count_matrix[x]; }
 		delete[] temp_nets_count_matrix;
 		return;
@@ -1800,12 +1839,28 @@ void re_route_path(int net_id, int sink_index) //邻域1
 	{
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
-		cout << "Global improved in N1: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N1: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " <<nonImproved<<" "<<T<< endl;
 		Global_delay = all_net_delay;
 
+
+		//***********************************************************//
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
+		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
 
+	}
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 	}
 
 	for (int x = 0; x < numFPGA + 1; x++) { delete[] temp_nets_count_matrix[x]; }
@@ -2002,6 +2057,9 @@ void neighbor_replan2(int net_id, int sink_index)
 
 	if (!SA_judge(current_obj, candidate_delay))
 	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 		// 不接受：不改 Current，清理临时资源后返回 false
 		for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
 		delete[] temp_nets_count_matrix;
@@ -2095,13 +2153,28 @@ void neighbor_replan2(int net_id, int sink_index)
 
 	if (all_net_delay < Global_delay && abs(all_net_delay - Global_delay)>1e-3)
 	{
-		cout << "Global improved in N2: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N2: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " "<<T<<endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		Global_delay = all_net_delay;
-
+		
+		//***********************************************************//
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
+		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
+	}
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 	}
 
 
@@ -3213,7 +3286,12 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 			added_arc_record.push_back(each);
 		calculate_su(Current);
 	}
-
+	else 
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+	}
 
 
 	//bool c = check_result(Current);
@@ -3230,24 +3308,29 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 
 	if (new_obj < Global_delay && abs(new_obj - Global_delay)>1e-3)
 	{
-		cout << "Global improved in N3: " << "from " << Global_delay << " to " << new_obj << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N3: " << "from " << Global_delay << " to " << new_obj << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " " << T << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		Global_delay = new_obj;
-
 		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
 		//***********************************************************//
-		//ofstream allout(nameFinalResult, ios::out | ios::app);
-		//if (allout.is_open())
-		//{
-		//	allout << 0 << " " << Global_delay << " " << bestTime << " " << T << endl;
-		//	allout.close();
-		//}
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
 		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
 	}
-
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+	}
 
 	/*check_result(Global);*/
 
@@ -3266,31 +3349,47 @@ void optimize_with_beam_search()
 
 	//迭代运行优化函数
 	//主循环
-	int iter = 0;
+	int k = 0;
+	int c = 1;
+	double Tem = T;
 	while (((clock() - beginTime) / CLOCKS_PER_SEC) < maxRunTime)
 	{
-		for (int i = 0; i < 10; i++)
+		for (int i = 0; i < 50; i++)
 		{
 			if (((clock() - beginTime) / CLOCKS_PER_SEC) > maxRunTime) break;
 			int net_index = -1, sink_index = -1;
 			choose_worst_path_2(Current, net_index, sink_index);
 
 			int neighbor_choose = rand() % 3;
-			//double n_search_begin = clock();
+			double n_search_begin = clock();
 			switch (neighbor_choose)
 			{
-			case(0): { re_route_path(net_index, sink_index);   break; }//邻域1 cout <<i<< " N1: ";
-			case(1): { neighbor_replan2(net_index, sink_index);  break; }//邻域2 cout<< i << " N2: ";
+			case(0): { re_route_path(net_index, sink_index);    break; }//邻域1 cout <<i<< " N1: ";
+			case(1): { neighbor_replan2(net_index, sink_index); break; }//邻域2 cout<< i << " N2: ";
 			case(2): { add_tunnel(net_index, sink_index);  break; }//邻域3 cout <<i<< " N3: ";
 			default:break;
 			}
 			//cout << (clock() - n_search_begin) / CLOCKS_PER_SEC << endl;
+			//cout << "Temperature: " << T << endl;
+			//cout << "no improve " << nonImproved << endl;
+			
 			//cout << "outer check: \n";
 			//bool check = check_result(Global, global_delta_weight_matrix);
 			//if (!check) exit(-1);
 		}
-		T = T * 0.9;
-		if (T <= 1) break;
+		k++;
+		//T = T0 - k*(T0 / 100);
+		T = 0.98 * T;
+		//T = Tem /(k+c);
+		//T = Tem / (1 + (2 * log(1 + k)));
+		//if (nonImproved >= 300 )//&& T < 0.2*T0
+		//{
+		//	T = T0;
+		//	cout << "T restet to " << T << endl; 
+		//	nonImproved = 0;
+		//}
+
+		if (T <	1) break;
 	}
 
 
@@ -3318,37 +3417,36 @@ int main(int argc, char** argv)
 	}
 
 	//***********************************************************//
-/*  strcpy(name_final_result, instanceName);
-  strcat(name_final_result, rep);*/
-	//strcpy(cutname, caseName);
-	//char* temp = strtok(cutname, "/");
-	//temp = strtok(NULL, "/");
-	//strcpy(nameFinalResult, "../Sol/");
-	//strcat(nameFinalResult, temp);
-	//strcat(nameFinalResult, "_");
-	//strcat(nameFinalResult, rep);
+	strcpy(cutname, caseName);
+	char* temp = strtok(cutname, "/");
+	strcpy(nameFinalResult, "../Sol/");
+	strcat(nameFinalResult, temp);
+	strcat(nameFinalResult, "_");
+	strcat(nameFinalResult, rep);
 
-	//strcpy(outRoute, "../instances/");
-	//strcat(outRoute, temp);
-	//strcat(outRoute, "/");
-	//strcat(outRoute, rep);
-	//strcat(outRoute, "_");
+	strcpy(outRoute, "../instances/");
+	strcat(outRoute, temp);
+	strcat(outRoute, "/");
+	strcat(outRoute, rep);
+	strcat(outRoute, "_");
 
-	//strcpy(outTopo, "../instances/");
-	//strcat(outTopo, temp);
-	//strcat(outTopo, "/");
-	//strcat(outTopo, rep);
-	//strcat(outTopo, "_");
+	strcpy(outTopo, "../instances/");
+	strcat(outTopo, temp);
+	strcat(outTopo, "/");
+	strcat(outTopo, rep);
+	strcat(outTopo, "_");
 	//***********************************************************//
 
 	srand(seed);
+	nonImproved = 0;
+	maxnoImproved = -1;
 	beginTime = clock();
 	bestTime = 0.0;
 	// 读取实例
 	read_instance();
 
 	// 运行时间限制
-	maxRunTime = 600;
+	maxRunTime = 3600;
 
 	//运行主算法
 	optimize_with_beam_search();
