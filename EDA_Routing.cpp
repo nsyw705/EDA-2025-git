@@ -37,11 +37,11 @@ using namespace std;
 
 //***********************************************************//
 char* rep;
-char nameFinalResult[256];
+//char nameFinalResult[256];
 char nameSchedule[256];
 char cutname[256];
-char outRoute[256];
-char outTopo[256];
+//char outRoute[256];
+//char outTopo[256];
 //***********************************************************//
 
 char* caseName;
@@ -821,8 +821,8 @@ bool check_result(vector<Net>& Input_Netgroup, int** delta_weight_M)
 
 void file_output()//输出design.route.out
 {
-	strcat(outRoute, "design.route.out");
-	std::ofstream out(outRoute, std::ios::out);
+	//strcat(outRoute, "design.route.out");
+	std::ofstream out("design.route.out", std::ios::out);
 	if (!out.is_open())
 		return;
 	vector<int> order1(numNet);
@@ -877,8 +877,8 @@ void file_output()//输出design.route.out
 
 
 	//通道重新组网输出
-	strcat(outTopo, "design.newtopo");
-	std::ofstream matrixout(outTopo, std::ios::out);
+	//strcat(outTopo, "design.newtopo");
+	std::ofstream matrixout("design.newtopo", std::ios::out);
 	if (!matrixout.is_open())
 		return;
 
@@ -2118,7 +2118,7 @@ void neighbor_replan2(int net_id, int sink_index)
 void choose_worst_path(vector<Net> S, int& net_id, int& sink_id)
 {
 	int n = 3;
-	int* net_delay_record = new int[numNet];
+	double* net_delay_record = new double[numNet];
 	vector<vector <int>> max_nets_set;
 	vector<vector<int>> max_sinks_set;
 	vector<double> top_net_delays;
@@ -3237,12 +3237,12 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 
 		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
 		//***********************************************************//
-		ofstream allout(nameFinalResult, ios::out | ios::app);
-		if (allout.is_open())
-		{
-			allout << 0 << " " << Global_delay << " " << bestTime << " " << T << endl;
-			allout.close();
-		}
+		//ofstream allout(nameFinalResult, ios::out | ios::app);
+		//if (allout.is_open())
+		//{
+		//	allout << 0 << " " << Global_delay << " " << bestTime << " " << T << endl;
+		//	allout.close();
+		//}
 		//***********************************************************//
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
@@ -3290,6 +3290,7 @@ void optimize_with_beam_search()
 			//if (!check) exit(-1);
 		}
 		T = T * 0.9;
+		if (T <= 1) break;
 	}
 
 
@@ -3319,25 +3320,25 @@ int main(int argc, char** argv)
 	//***********************************************************//
 /*  strcpy(name_final_result, instanceName);
   strcat(name_final_result, rep);*/
-	strcpy(cutname, caseName);
-	char* temp = strtok(cutname, "/");
+	//strcpy(cutname, caseName);
+	//char* temp = strtok(cutname, "/");
 	//temp = strtok(NULL, "/");
-	strcpy(nameFinalResult, "../Sol/");
-	strcat(nameFinalResult, temp);
-	strcat(nameFinalResult, "_");
-	strcat(nameFinalResult, rep);
+	//strcpy(nameFinalResult, "../Sol/");
+	//strcat(nameFinalResult, temp);
+	//strcat(nameFinalResult, "_");
+	//strcat(nameFinalResult, rep);
 
-	strcpy(outRoute, "../instances/");
-	strcat(outRoute, temp);
-	strcat(outRoute, "/");
-	strcat(outRoute, rep);
-	strcat(outRoute, "_");
+	//strcpy(outRoute, "../instances/");
+	//strcat(outRoute, temp);
+	//strcat(outRoute, "/");
+	//strcat(outRoute, rep);
+	//strcat(outRoute, "_");
 
-	strcpy(outTopo, "../instances/");
-	strcat(outTopo, temp);
-	strcat(outTopo, "/");
-	strcat(outTopo, rep);
-	strcat(outTopo, "_");
+	//strcpy(outTopo, "../instances/");
+	//strcat(outTopo, temp);
+	//strcat(outTopo, "/");
+	//strcat(outTopo, rep);
+	//strcat(outTopo, "_");
 	//***********************************************************//
 
 	srand(seed);
@@ -3347,7 +3348,7 @@ int main(int argc, char** argv)
 	read_instance();
 
 	// 运行时间限制
-	maxRunTime = 3600;
+	maxRunTime = 600;
 
 	//运行主算法
 	optimize_with_beam_search();
