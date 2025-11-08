@@ -30,18 +30,18 @@ using namespace std;
 #define SDF_MIN(a,b) ((a)<(b)?(a):(b))
 
 #define BEAMWIDTH 3//邻域1参数
-#define Maxdepth 8 //邻域1参数
-#define Max_kdepth 5//邻域1参数
+#define Max_kdepth 3//邻域1参数
 #define SHORTESTROB 0.8//邻域2参数
-#define ADJUSTRATIO 0.3//邻域3参数
+#define ADJUSTRATIO 0.5//邻域3参数
+#define TRMPLAYER 20 //每个温度尝试次数
 
 //***********************************************************//
 char* rep;
-//char nameFinalResult[256];
+char nameFinalResult[256];
 char nameSchedule[256];
 char cutname[256];
-//char outRoute[256];
-//char outTopo[256];
+char outRoute[256];
+char outTopo[256];
 //***********************************************************//
 
 char* caseName;
@@ -53,6 +53,8 @@ int seed;
 double maxRunTime;
 double beginTime;
 double bestTime;
+int nonImproved;
+int maxnoImproved;
 
 int numFPGA; //FPGA数量
 int numNet; //Net数量
@@ -62,6 +64,7 @@ int numAddedTunnel; //增加的通道数量
 
 int R_max; //最大TDM比率
 double T; //温度
+double T0;
 
 int** weight_matrix; //FPGA间的连接通道矩阵
 int** delta_weight_matrix; //FPGA间变动的通道数量矩阵
@@ -259,7 +262,7 @@ void read_instance()
 	std::snprintf(designFpgaOutName, sizeof designFpgaOutName, "%s%s", temp_caseName, designFpgaOut);
 
 	R_max = 512; //最大TDM比率
-	T = 300.0;
+	T = 500.0;
 
 	ifstream FIC;
 	FIC.open(designInfoName);
@@ -821,8 +824,8 @@ bool check_result(vector<Net>& Input_Netgroup, int** delta_weight_M)
 
 void file_output()//输出design.route.out
 {
-	//strcat(outRoute, "design.route.out");
-	std::ofstream out("design.route.out", std::ios::out);
+	strcat(outRoute, "design.route.out");
+	std::ofstream out(outRoute, std::ios::out);
 	if (!out.is_open())
 		return;
 	vector<int> order1(numNet);
@@ -877,8 +880,8 @@ void file_output()//输出design.route.out
 
 
 	//通道重新组网输出
-	//strcat(outTopo, "design.newtopo");
-	std::ofstream matrixout("design.newtopo", std::ios::out);
+	strcat(outTopo, "design.newtopo");
+	std::ofstream matrixout(outTopo, std::ios::out);
 	if (!matrixout.is_open())
 		return;
 
@@ -900,7 +903,9 @@ bool SA_judge(double current_obj, double new_obj)
 
 	else if (new_obj >= current_obj)
 	{
-		double prob = exp(-(new_obj - current_obj) / T);
+		double prob = exp(-(new_obj - current_obj+0.1) / T);
+		//cout << "Tem: " << T << ", Prob: " << prob << endl;
+		//double prob = 1.0 / (1.0 + ((new_obj - current_obj) / T));
 		double rand_value = rand() / double(RAND_MAX);
 		if (rand_value <= prob)
 			return true;
@@ -1232,7 +1237,8 @@ void multi_dijkstra(int source_node, vector<int> sink_node, vector<vector<pair<i
 	fpga_s.insert(k);
 	vector<char> same_fpga(k, 0);//统计源点和终点在同一块fpga的情况
 	int nums_same = 0;
-	for (int i = 0; i < k; ++i) {
+	for (int i = 0; i < k; ++i)
+	{
 		if (sinks_fpga[i] == source_fpga) {
 			same_fpga[i] = 1; nums_same++;
 		} // 路径为空，不占跨 FPGA 边
@@ -1378,9 +1384,21 @@ void copy_solution(vector<Net>& S1, vector<Net> S2, int** S1_delta_weight_M, int
 	calculate_su(S1);
 }
 
-void initialize_solution() {//初始化
-	for (int n = 0; n < numNet; n++) {
-		auto& net = Current[n];
+void initialize_solution() //初始化
+{
+	vector<int> record;
+
+	for (int n = 0; n < numNet; n++)
+		record.push_back(n);
+
+	for (int n = 0; n < numNet; n++)
+	{
+		if ((int)record.size() <= 0)break;
+		int n_idx = rand() % (int)record.size();
+		int net_no = record[n_idx];
+		record.erase(record.begin() + n_idx);
+
+		auto& net = Current[net_no];
 		multi_dijkstra(net.source_node, net.sink_nodes, net.path);
 		// 更新累计使用次数
 		pair<int, int> arc = {};
@@ -1415,8 +1433,28 @@ void initialize_solution() {//初始化
 			Global_delay = net_delay[x];
 		}
 	}
+	T = 300;
+	T0 = 300;
 	std::copy(net_delay, net_delay + numNet, Global_net_delay);
 	copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
+	bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
+	nonImproved = 0;
+
+	if (nonImproved > maxnoImproved)
+		maxnoImproved = nonImproved;
+
+	cout << "Initial: " << Global_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << endl;
+
+	bestTime=(clock()-beginTime)/CLOCKS_PER_SEC;
+	//***********************************************************//
+	ofstream allout(nameFinalResult, ios::out | ios::app);
+	if (allout.is_open())
+	{
+		allout << 0 << " " << Global_delay << " " << bestTime << " " << T << " " << maxnoImproved << endl;
+		allout.close();
+	}
+	//***********************************************************//
+
 }
 
 
@@ -1724,6 +1762,9 @@ void re_route_path(int net_id, int sink_index) //邻域1
 	//模拟退火
 	if (!SA_judge(real_net_delay, temp_net_delay))
 	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 		for (int x = 0; x < numFPGA + 1; x++) { delete[] temp_nets_count_matrix[x]; }
 		delete[] temp_nets_count_matrix;
 		return;
@@ -1800,17 +1841,36 @@ void re_route_path(int net_id, int sink_index) //邻域1
 	{
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
-		cout << "Global improved in N1: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N1: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " " << T << endl;
 		Global_delay = all_net_delay;
+		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
 
+		//***********************************************************//
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
+		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
 
+	}
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 	}
 
 	for (int x = 0; x < numFPGA + 1; x++) { delete[] temp_nets_count_matrix[x]; }
 	delete[] temp_nets_count_matrix;
 }
+
+
+
 
 
 
@@ -1826,6 +1886,7 @@ void re_route_path(int net_id, int sink_index) //邻域1
 //          true  —— 成功产生新路径并被接受（更新Current、nets_count_matrix、path_map）
 //          false —— 新路径被拒绝或不可行（不修改原有解）
 //*****************************************************************************************
+
 void neighbor_replan2(int net_id, int sink_index)
 {
 	// ---------- (0) 数据结构与参数设置 ----------
@@ -1837,6 +1898,8 @@ void neighbor_replan2(int net_id, int sink_index)
 	int sink_fpga = nodes_FPGA[sink_node];
 
 	const auto& target_path = target_net.path[sink_index]; // 原最差路径（边序列）
+
+
 
 	// 临时 nets_count：搜索过程中使用（不影响全局）
 	int** temp_nets_count_matrix = new int* [numFPGA + 1];
@@ -1867,6 +1930,11 @@ void neighbor_replan2(int net_id, int sink_index)
 		}
 		// 注意：不修改 target_net.path_map 里的计数
 	}
+
+
+
+
+
 	// 可选的简单去环
 	std::vector<char> on_path(numFPGA + 1, 0);
 	std::vector<std::pair<int, int>> new_edges;     // 新路径（边序列）
@@ -1877,23 +1945,35 @@ void neighbor_replan2(int net_id, int sink_index)
 
 	// 收集该 net 除当前 sink 之外已使用的无向边（每网一次）
 	std::unordered_set<std::pair<int, int>, PairHash> used_by_this_net_elsewhere;
-
-	for (int sj = 0; sj < target_net.sink_num; ++sj) {
-		if (sj == sink_index) continue;
-
-		for (const auto& e : target_net.path[sj]) {
-			int a = e.first;
-			int b = e.second;
-			if (a == b) continue;
-			if (a > b) std::swap(a, b); // 无向化，确保 (a,b) 和 (b,a) 等价
-			used_by_this_net_elsewhere.insert({ a, b });
+	used_by_this_net_elsewhere.reserve(target_net.path_map.size());
+	for (const auto& kv : target_net.path_map) {
+		const auto& edge = kv.first;     // (a,b) 已经是无向化键
+		int cnt = kv.second;             // 本 net 在所有 sink 上的使用次数
+		// 当前这个 sink 是否也用了这条边？
+		bool curr_sink_has = false;
+		for (const auto& e : target_path) {
+			int u = e.first, v = e.second; if (u > v) std::swap(u,v);
+			if (u == edge.first && v == edge.second) { curr_sink_has = true; break; }
+		}
+		// “其它路径已占用” 等价于 (cnt - (当前sink是否用)) > 0
+		if (cnt - (curr_sink_has ? 1 : 0) > 0) {
+			used_by_this_net_elsewhere.insert(edge);
 		}
 	}
-
 	// ---------- (2) 生成当前起点->终点的 Dijkstra 最短路径（缓存整条路径） ----------
 	std::vector<int> cached_nodes; // [cur, ..., sink]
 	cached_nodes = single_dijkstra_withpath(source_fpga, sink_fpga, temp_nets_count_matrix, on_path);
 	size_t cached_pos = 0; // cached_nodes[cached_pos] == 当前节点
+
+if (cached_nodes.empty() || (cached_nodes.size()==1 && cached_nodes[0]==-1) 
+    || cached_nodes.size()<2 || cached_nodes[0] != cur) {
+    // 安全返回（不要影响全局）
+    for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+    delete[] temp_nets_count_matrix;
+    return;
+}
+
+
 
 	// ---------- (3) 逐步前进：先决定是否走最短路；仅在改走非最短路后重算 Dijkstra ----------
 
@@ -1912,6 +1992,7 @@ void neighbor_replan2(int net_id, int sink_index)
 		int  chosen = next_on_shortest;
 		bool picked_alt = false;
 
+
 		if (!use_shortest) {
 			// 枚举合法的“非最短后继”
 			std::vector<int> alt;
@@ -1921,7 +2002,7 @@ void neighbor_replan2(int net_id, int sink_index)
 				if (on_path[v]) continue; // 防环
 				int phys = weight_matrix[cur][v] + delta_weight_matrix[cur][v];
 				if (phys <= 0) continue;
-				int tdm_ratio = ceil8((double)(temp_nets_count_matrix[cur][v] + 1) / (double)phys);
+				int tdm_ratio = ceil8((double)(temp_nets_count_matrix[cur][v] + 1) / phys);
 				if (tdm_ratio > R_max) continue;
 				alt.push_back(v);
 			}
@@ -1953,6 +2034,9 @@ void neighbor_replan2(int net_id, int sink_index)
 
 		if (cur == sink_fpga) break; // 已到终点
 
+
+
+
 		if (picked_alt) {
 			// 走了非最短：重建“cur→sink”最短路缓存
 			cached_nodes = single_dijkstra_withpath(cur, sink_fpga, temp_nets_count_matrix, on_path);
@@ -1963,6 +2047,7 @@ void neighbor_replan2(int net_id, int sink_index)
 			// cached_nodes 形如 [旧cur, 新cur, ..., sink]，删掉旧cur即可
 			cached_nodes.erase(cached_nodes.begin());
 		}
+
 	}
 
 
@@ -1970,43 +2055,43 @@ void neighbor_replan2(int net_id, int sink_index)
 	// ---------- (4) 计算“候选路径”的延时（只算这条路径；与 calculate_su 口径一致） ----------
 
 	double d = 0.0;
-	std::unordered_set<std::pair<int, int>, PairHash> once_in_candidate; // 候选路径内去重
-
+		// 不要对候选路径做“边去重”！
+	// std::unordered_set<std::pair<int, int>, PairHash> once_in_candidate; // 候选路径内去重
 	for (const auto& e : new_edges) {
-		int u = e.first;
-		int v = e.second;
+		int u = e.first, v = e.second;
 		if (u == v) continue;
 
 		int a = u, b = v;
-		if (a > b) std::swap(a, b); // 无向化
-		std::pair<int, int> edge = { a, b };
-
-		// 候选路径内去重
-		if (!once_in_candidate.insert(edge).second)
-			continue;
-
+		if (a > b) std::swap(a, b); // 无向化键
+		std::pair<int,int> edge = {a,b};
 
 		int phys = weight_matrix[a][b] + delta_weight_matrix[a][b];
-		int base = temp_nets_count_matrix[a][b]; // “假撤销旧路”后的跨网数
-		int inc = used_by_this_net_elsewhere.count(edge) ? 0 : 1;
 
-		int tdm = ceil8((double)(base + inc) / (double)phys);
-		d += 30.0 + 0.7 * (double)tdm;
+		// base = “假撤销旧路”后的 nets_count（你前面已 -- 过）
+		int base = temp_nets_count_matrix[a][b];
+
+		// inc = 本 net 是否已经在其它 sink 上使用过该无向边
+		//      是 => 0； 否 => 1。注意：同一候选路径里多次出现，inc 依然是同一个值！
+		int inc = used_by_this_net_elsewhere.count(edge) ?0 : 1;
+
+		d += 30.0 + 0.7 * ceil8((double)(base + inc) / phys);
 	}
-
 	double candidate_delay = d;
+
 
 	double current_obj = net_delay[net_id];
 
-
-
 	if (!SA_judge(current_obj, candidate_delay))
 	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 		// 不接受：不改 Current，清理临时资源后返回 false
 		for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
 		delete[] temp_nets_count_matrix;
 		return;
 	}
+
 
 	// ---------- (6) 被接受：按 re_route_path 口径提交（先撤旧、再加新） ----------
 	// 6.1 撤销旧路径（path_map--；当从1->0时 nets_count_matrix 对称-- 并擦除键）
@@ -2058,36 +2143,10 @@ void neighbor_replan2(int net_id, int sink_index)
 	}
 
 
-	// 6.4 回写该路径延时与该 net 的 net_delay
-	Current[net_id].path_delay[sink_index] = candidate_delay;
-	double nd = 0.0;
-	for (double d : Current[net_id].path_delay) nd = std::max(nd, d);
-	net_delay[net_id] = nd;
-
 
 	calculate_su(Current);
 
-	// ——  校验同一条路径重算的延时是否一致（用于测试，可注释）
-	//double recomputed_path = Current[net_id].path_delay[sink_index];
-	//if (recomputed_path != candidate_delay) {
-	//	std::cerr << "[CHK] path_delay mismatch after recompute: "
-	//		<< "expected=" << candidate_delay
-	//		<< " got=" << recomputed_path
-	//		<< " (net=" << net_id << ", sink=" << sink_index << ")\n";
-	//	exit(-1);
-	//}
 
-	//double check_max_delay = 0;
-	//for (int x = 0; x < numNet; x++)
-	//	if (net_delay[x] > check_max_delay)
-	//		check_max_delay = net_delay[x];
-
-
-	//if (abs(candidate_delay - check_max_delay) > 1e-3)
-	//{
-	//	cout << "unmatch in N2: reported " << candidate_delay << " actual " << check_max_delay;
-	//	exit(-1);
-	//}
 	double all_net_delay = 0;
 	for (int x = 0; x < numNet; x++)
 		if (net_delay[x] > all_net_delay)
@@ -2095,19 +2154,489 @@ void neighbor_replan2(int net_id, int sink_index)
 
 	if (all_net_delay < Global_delay && abs(all_net_delay - Global_delay)>1e-3)
 	{
-		cout << "Global improved in N2: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N2: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " " << T << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		Global_delay = all_net_delay;
-
+		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
+		//***********************************************************//
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
+		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
+	}
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
 	}
 
 
 	// 释放临时矩阵
 	for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
 	delete[] temp_nets_count_matrix;
+
+
+
+	// exit(0);
+
+}
+
+
+void neighbor_replan2_test(int net_id, int sink_index)
+{
+
+	// ===== N2 Debug Switch =====
+static const bool DBG_N2 = true;
+
+// ===== Tiny helpers (本地 lambda，不污染全局) =====
+auto dump_path = [&](const char* tag, const std::vector<std::pair<int,int>>& P){
+    if (!DBG_N2) return;
+    std::cout << "[N2] " << tag << " edges(" << P.size() << "): ";
+    for (auto e : P) std::cout << "("<<e.first<<","<<e.second<<") ";
+    std::cout << "\n";
+};
+
+auto dump_nodes = [&](const char* tag, const std::vector<int>& nodes){
+    if (!DBG_N2) return;
+    std::cout << "[N2] " << tag << " nodes(" << nodes.size() << "): ";
+    for (int x : nodes) std::cout << x << " ";
+    std::cout << "\n";
+};
+
+auto dump_vecchar = [&](const char* tag, const std::vector<char>& v){
+    if (!DBG_N2) return;
+    std::cout << "[N2] " << tag << ": ";
+    for (size_t i=1;i<v.size();++i) if(v[i]) std::cout<<i<<" ";
+    std::cout << "\n";
+};
+
+auto dump_edge_counts = [&](const char* tag,
+                            const std::vector<std::pair<int,int>>& edges,
+                            int** countM){
+    if (!DBG_N2) return;
+    std::cout << "[N2] " << tag << ": ";
+    std::unordered_set<long long> seen;
+    for (auto e: edges){
+        int a=e.first,b=e.second; if(a>b) std::swap(a,b);
+        long long key = ((long long)a<<32) | (unsigned)b;
+        if(seen.insert(key).second){
+            std::cout << "("<<a<<","<<b<<")="<< countM[a][b] << " ";
+        }
+    }
+    std::cout << "\n";
+};
+
+
+
+auto FATAL = [&](const std::string& msg){
+    std::cerr << "[N2][FATAL] " << msg << "\n";
+
+    exit(-1);
+};
+
+
+	// ---------- (0) 数据结构与参数设置 ----------
+	auto& target_net = Current[net_id];
+	int   source_node = target_net.source_node;
+	int   sink_node = target_net.sink_nodes[sink_index];
+
+	int source_fpga = nodes_FPGA[source_node];
+	int sink_fpga = nodes_FPGA[sink_node];
+
+	const auto& target_path = target_net.path[sink_index]; // 原最差路径（边序列）
+
+
+	if (DBG_N2) {
+    std::cout << "\n[N2] net="<<net_id<<" sink="<<sink_index
+              <<" src_fpga="<<source_fpga<<" sink_fpga="<<sink_fpga
+              <<" current_net_delay="<<net_delay[net_id]
+              <<" global="<<Global_delay
+              <<" T="<<T<<"\n";
+    dump_path("old_path", target_path);
+}
+
+
+
+	// 临时 nets_count：搜索过程中使用（不影响全局）
+	int** temp_nets_count_matrix = new int* [numFPGA + 1];
+	for (int i = 0; i <= numFPGA; ++i) {
+		temp_nets_count_matrix[i] = new int[numFPGA + 1];
+		for (int j = 0; j <= numFPGA; ++j)
+			temp_nets_count_matrix[i][j] = nets_count_matrix[i][j];
+	}
+
+	// ---------- (1) 假设取消原路径，调整通道数量（仅动临时矩阵） ----------
+
+	std::pair<int, int> arc;
+	for (const auto& e : target_path) {
+		int a = e.first, b = e.second;
+		if (a > b) arc = { b, a }; else arc = { a, b };
+		auto it = target_net.path_map.find(arc);
+		if (it == target_net.path_map.end()) {
+			std::cerr << "path_map missing arc (" << arc.first << "," << arc.second << ")\n";
+			// 清理内存后返回失败
+			for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+			delete[] temp_nets_count_matrix;
+			return;
+		}
+		if (it->second == 1) {
+			// 该 net 取消这条边的占用（无向对称）
+			temp_nets_count_matrix[arc.first][arc.second]--;
+			temp_nets_count_matrix[arc.second][arc.first]--;
+		}
+		// 注意：不修改 target_net.path_map 里的计数
+	}
+
+
+if (DBG_N2) {
+    dump_edge_counts("temp_after_remove_old", target_path, temp_nets_count_matrix);
+
+    // 交叉验证：temp = global - 本路径一次占用（仅在 path_map 计数==1 的边上）
+    // 若 path_map > 1：本 net 在这条无向边上还有其它路径占用，不应在 temp 中 -1
+    std::unordered_set<std::pair<int,int>, PairHash> uniq;
+    for (auto e : target_path) {
+        int a = e.first, b = e.second;
+        if (a == b) continue;
+        if (a > b) std::swap(a, b);
+        if (!uniq.insert({a,b}).second) continue;  // 候选路径内去重
+
+        int g_ab = nets_count_matrix[a][b];
+        int t_ab = temp_nets_count_matrix[a][b];
+
+        auto it = target_net.path_map.find({a,b});
+        int pm = (it == target_net.path_map.end() ? 0 : it->second);
+
+        if (pm == 1) {
+            // 这条边仅由本 sink 的这条路径占用一次：临时矩阵应比全局少 1
+            if (t_ab != g_ab - 1 || temp_nets_count_matrix[b][a] != nets_count_matrix[b][a] - 1) {
+                std::ostringstream oss;
+                oss << "temp mismatch after remove-old on edge(" << a << "," << b << ") "
+                    << "[path_map==1]: global=" << g_ab << ", temp=" << t_ab
+                    << " (sym: g=" << nets_count_matrix[b][a]
+                    << ", t=" << temp_nets_count_matrix[b][a] << ")";
+                FATAL(oss.str());
+            }
+            if (t_ab < 0 || temp_nets_count_matrix[b][a] < 0) {
+                std::ostringstream oss;
+                oss << "temp became negative on edge(" << a << "," << b << ") "
+                    << "[path_map==1]: temp=" << t_ab
+                    << " / " << temp_nets_count_matrix[b][a];
+                FATAL(oss.str());
+            }
+        } else {
+            // pm==0 或 pm>=2：我们在(1)步骤没有对 temp 扣这条边，因此 temp 应与 global 相等
+            if (t_ab != g_ab || temp_nets_count_matrix[b][a] != nets_count_matrix[b][a]) {
+                std::ostringstream oss;
+                oss << "temp mismatch after remove-old on edge(" << a << "," << b << ") "
+                    << "[path_map=" << pm << "]: global=" << g_ab << ", temp=" << t_ab
+                    << " (sym: g=" << nets_count_matrix[b][a]
+                    << ", t=" << temp_nets_count_matrix[b][a] << ")";
+                FATAL(oss.str());
+            }
+        }
+    }
+}
+
+
+
+
+	// 可选的简单去环
+	std::vector<char> on_path(numFPGA + 1, 0);
+	std::vector<std::pair<int, int>> new_edges;     // 新路径（边序列）
+	int cur = source_fpga;
+	on_path[cur] = 1;
+
+
+
+	// 收集该 net 除当前 sink 之外已使用的无向边（每网一次）
+	std::unordered_set<std::pair<int, int>, PairHash> used_by_this_net_elsewhere;
+	used_by_this_net_elsewhere.reserve(target_net.path_map.size());
+	for (const auto& kv : target_net.path_map) {
+		const auto& edge = kv.first;     // (a,b) 已经是无向化键
+		int cnt = kv.second;             // 本 net 在所有 sink 上的使用次数
+		// 当前这个 sink 是否也用了这条边？
+		bool curr_sink_has = false;
+		for (const auto& e : target_path) {
+			int u = e.first, v = e.second; if (u > v) std::swap(u,v);
+			if (u == edge.first && v == edge.second) { curr_sink_has = true; break; }
+		}
+		// “其它路径已占用” 等价于 (cnt - (当前sink是否用)) > 0
+		if (cnt - (curr_sink_has ? 1 : 0) > 0) {
+			used_by_this_net_elsewhere.insert(edge);
+			if (DBG_N2) std::cout << "[N2] edge ("<<edge.first<<","<<edge.second<<") used by this net elsewhere\n";
+		}
+	}
+	// ---------- (2) 生成当前起点->终点的 Dijkstra 最短路径（缓存整条路径） ----------
+	std::vector<int> cached_nodes; // [cur, ..., sink]
+	cached_nodes = single_dijkstra_withpath(source_fpga, sink_fpga, temp_nets_count_matrix, on_path);
+	size_t cached_pos = 0; // cached_nodes[cached_pos] == 当前节点
+
+		dump_nodes("cached_nodes_init", cached_nodes);
+if (cached_nodes.empty() || (cached_nodes.size()==1 && cached_nodes[0]==-1) 
+    || cached_nodes.size()<2 || cached_nodes[0] != cur) {
+    if (DBG_N2) std::cout << "[N2] no feasible path from current source -> sink under temp\n";
+    // 安全返回（不要影响全局）
+    for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+    delete[] temp_nets_count_matrix;
+    return;
+}
+
+
+
+	// ---------- (3) 逐步前进：先决定是否走最短路；仅在改走非最短路后重算 Dijkstra ----------
+
+
+	for (int step = 0; step < numFPGA && cur != sink_fpga; ++step)
+	{
+		// 确保缓存可用：需要至少 [cur, next, ..., sink]
+		if (cached_nodes.empty() || (cached_nodes.size() == 1 && cached_nodes[0] == -1) || cached_nodes.size() < 2) {
+			// 无路可走，终止本次邻域
+			break;
+		}
+
+		int next_on_shortest = cached_nodes[1];
+
+		bool use_shortest = (rand() % 100) < (int)(SHORTESTROB * 100.0);
+		int  chosen = next_on_shortest;
+		bool picked_alt = false;
+
+				// 调试信息
+		if (DBG_N2) {
+    std::cout << "[N2] step="<<step<<" cur="<<cur
+              <<" next_on_shortest="<<next_on_shortest
+              <<" use_shortest="<<(use_shortest?"Y":"N")<<"\n";
+		}
+
+		if (!use_shortest) {
+			// 枚举合法的“非最短后继”
+			std::vector<int> alt;
+			alt.reserve(numFPGA);
+			for (int v = 1; v <= numFPGA; ++v) {
+				if (v == cur || v == next_on_shortest) continue;
+				if (on_path[v]) continue; // 防环
+				int phys = weight_matrix[cur][v] + delta_weight_matrix[cur][v];
+				if (phys <= 0) continue;
+				int tdm_ratio = ceil8((double)(temp_nets_count_matrix[cur][v] + 1) /phys);
+				if (tdm_ratio > R_max) continue;
+				alt.push_back(v);
+			}
+
+			// 对候选逐个探测“cand→sink”是否可达（禁止 on_path）
+			while (!alt.empty()) {
+				int idx = rand() % (int)alt.size();
+				int cand = alt[idx];
+
+				auto probe = single_dijkstra_withpath(cand, sink_fpga, temp_nets_count_matrix, on_path);
+				if (!probe.empty() && !(probe.size() == 1 && probe[0] == -1)) {
+					// cand 可达：只走一步到 cand，然后立刻重建“cand→sink”的最短路缓存
+					chosen = cand;
+					picked_alt = true;
+					break;
+				}
+				else {
+					// cand 不可达，换下一个
+					alt.erase(alt.begin() + idx);
+				}
+			}
+			// 若没挑到可达的候选，就退回走最短路一步
+		}
+
+	if (DBG_N2) {
+		std::cout << "[N2] chosen="<<chosen<<" picked_alt="<<(picked_alt?"Y":"N")<<"\n";
+	}
+
+		// ——落地“走一步”——
+		new_edges.emplace_back(cur, chosen);
+		cur = chosen;
+		on_path[cur] = 1;
+
+		if (cur == sink_fpga) break; // 已到终点
+
+
+
+
+		if (picked_alt) {
+			// 走了非最短：重建“cur→sink”最短路缓存
+			cached_nodes = single_dijkstra_withpath(cur, sink_fpga, temp_nets_count_matrix, on_path);
+
+		}
+		else {
+			// 走了最短路一步：从缓存中弹掉当前节点，缓存前移一位
+			// cached_nodes 形如 [旧cur, 新cur, ..., sink]，删掉旧cur即可
+			cached_nodes.erase(cached_nodes.begin());
+		}
+
+	if (DBG_N2) dump_nodes("cached_nodes_rebuilt", cached_nodes);
+	}
+
+
+
+	// ---------- (4) 计算“候选路径”的延时（只算这条路径；与 calculate_su 口径一致） ----------
+
+	double d = 0.0;
+		// 不要对候选路径做“边去重”！
+	// std::unordered_set<std::pair<int, int>, PairHash> once_in_candidate; // 候选路径内去重
+	for (const auto& e : new_edges) {
+		int u = e.first, v = e.second;
+		if (u == v) continue;
+
+		int a = u, b = v;
+		if (a > b) std::swap(a, b); // 无向化键
+		std::pair<int,int> edge = {a,b};
+
+		int phys = weight_matrix[a][b] + delta_weight_matrix[a][b];
+
+		// base = “假撤销旧路”后的 nets_count（你前面已 -- 过）
+		int base = temp_nets_count_matrix[a][b];
+
+		// inc = 本 net 是否已经在其它 sink 上使用过该无向边
+		//      是 => 0； 否 => 1。注意：同一候选路径里多次出现，inc 依然是同一个值！
+		int inc = used_by_this_net_elsewhere.count(edge) ?0 : 1;
+
+		d += 30.0 + 0.7 * ceil8((double)(base + inc) / phys);
+
+	}
+	double candidate_delay = d;
+
+
+	double current_obj = net_delay[net_id];
+
+
+
+if (DBG_N2) {
+    std::cout << "[N2] SA: current="<<current_obj
+              << " new="<<candidate_delay
+              << " T="<<T << "\n";
+}
+	if (!SA_judge(current_obj, candidate_delay))
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+		// 不接受：不改 Current，清理临时资源后返回 false
+		for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+		delete[] temp_nets_count_matrix;
+		return;
+	}
+
+
+	// ---------- (6) 被接受：按 re_route_path 口径提交（先撤旧、再加新） ----------
+	// 6.1 撤销旧路径（path_map--；当从1->0时 nets_count_matrix 对称-- 并擦除键）
+	std::pair<int, int> arc_change;
+	for (const auto& e : Current[net_id].path[sink_index]) {
+		int a = e.first, b = e.second;
+		if (a > b) arc_change = { b, a }; else arc_change = { a, b };
+		auto it = Current[net_id].path_map.find(arc_change);
+		if (it == Current[net_id].path_map.end()) {
+			std::cout << "2path_map of Net does not record an arc!!!";
+			for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+			delete[] temp_nets_count_matrix;
+			exit(-1);
+		}
+		else {
+			if (it->second == 1) {
+				nets_count_matrix[a][b]--;
+				nets_count_matrix[b][a]--;
+				Current[net_id].path_map.erase(it);
+			}
+			else {
+				it->second--;
+			}
+		}
+	}
+
+
+
+	// 2) 覆盖写入新路径
+	Current[net_id].path[sink_index] = new_edges; //（或 top_k_paths[chosen_id]，按你的场景）
+
+	// 3) 新路径生效：path_map++；当从0增到1时，nets_count_matrix 对称++
+	{
+		std::pair<int, int> arc_add;
+		for (const auto& edges : Current[net_id].path[sink_index]) { // 新路径的每条边
+			int a = edges.first, b = edges.second;
+			if (a > b) arc_add = { b, a }; else arc_add = { a, b };
+
+			auto it = Current[net_id].path_map.find(arc_add);
+			if (it == Current[net_id].path_map.end()) {      // 0 -> 1：全局跨边计数对称++
+				nets_count_matrix[a][b]++;
+				nets_count_matrix[b][a]++;
+				Current[net_id].path_map[arc_add] = 1;
+			}
+			else {
+				it->second++;                                 // 已存在：直接累加
+			}
+		}
+	}
+
+
+
+	calculate_su(Current);
+
+
+if (DBG_N2) {
+    // 路径级：用全局 nets_count_matrix 重算该路径延时，对比存储的 path_delay
+
+    std::cout << "[N2][post] path_delay stored="<<candidate_delay
+              <<" recomputed="<<Current[net_id].path_delay[sink_index] << "\n";
+	if (candidate_delay != Current[net_id].path_delay[sink_index] )
+		FATAL("post-check: path_delay mismatch");
+
+
+    // net 级：max(path_delay[j]) 
+
+    std::cout << "[N2][post] net_delay stored="<<net_delay[net_id]<< "\n";
+}
+
+
+
+	double all_net_delay = 0;
+	for (int x = 0; x < numNet; x++)
+		if (net_delay[x] > all_net_delay)
+			all_net_delay = net_delay[x];
+
+	if (all_net_delay < Global_delay && abs(all_net_delay - Global_delay)>1e-3)
+	{
+		cout << "Global improved in N2: from " << Global_delay << " to " << all_net_delay << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " " << T << endl;
+		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
+		std::copy(net_delay, net_delay + numNet, Global_net_delay);
+		Global_delay = all_net_delay;
+		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
+		//***********************************************************//
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
+		//***********************************************************//
+		nonImproved = 0;
+		//bool check = check_result(Global, global_delta_weight_matrix);
+		//if (!check) exit(-1);
+	}
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+	}
+
+
+	// 释放临时矩阵
+	for (int r = 0; r <= numFPGA; ++r) delete[] temp_nets_count_matrix[r];
+	delete[] temp_nets_count_matrix;
+
+
+
+	// exit(0);
 
 }
 
@@ -3103,7 +3632,7 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 
 
 	// ---------- (1) 增加通道阶段  ----------
-	random_rule_add_tunnel(net_index, sink_index, add_tunnel_num, added_count, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
+	random_rule_add_tunnel_2(net_index, sink_index, add_tunnel_num, added_count, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
 	//cout << "---------------------phase 1: add completed---------------------" << endl;
 
 
@@ -3128,18 +3657,24 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 				}
 			}
 
-	vector<bool> is_used;
-	for (int x = 0; x < (int)temp_added_arc_record.size(); x++)
-		is_used.push_back(false);
-
+	
+	unordered_set<pair<int, int>, PairHash> is_used;
+	vector<pair<int, int>> not_used_added_arc;
+	for (auto each : temp_added_arc_record)
+		not_used_added_arc.push_back(each);
 
 	while (adjust_count < adjust_num) //随机取消已增加的通道
 	{
-		auto it = std::find(is_used.begin(), is_used.end(), false);
-		if (it == is_used.end()) break;
+		if (not_used_added_arc.empty()) break;
+
+
 		int adjust_idx = rand() % (int)temp_added_arc_record.size();
-		while (is_used[adjust_idx])
+
+		while (is_used.find(temp_added_arc_record[adjust_idx]) != is_used.end())
 			adjust_idx = rand() % (int)temp_added_arc_record.size();
+
+
+
 		auto adjust_arc = temp_added_arc_record[adjust_idx];
 		int f_a = adjust_arc.first; int f_b = adjust_arc.second;
 
@@ -3155,10 +3690,11 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 		else format_arc = { f_b,f_a };
 		if (routed_used_added_arcs.find(format_arc) != routed_used_added_arcs.end())
 		{
-			is_used[adjust_idx] = true;
+			is_used.insert(adjust_arc);
+			auto it = std::remove(not_used_added_arc.begin(), not_used_added_arc.end(), adjust_arc);
+			not_used_added_arc.erase(it, not_used_added_arc.end());
 			continue;
 		}
-
 
 		temp_delta_weight_matrix[f_a][f_b]--;
 		temp_delta_weight_matrix[f_b][f_a]--;
@@ -3166,18 +3702,22 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 		temp_fpga_weight[f_b]--;
 
 		temp_added_arc_record.erase(temp_added_arc_record.begin() + adjust_idx);
+		auto it = std::find(not_used_added_arc.begin(), not_used_added_arc.end(), adjust_arc);
+		not_used_added_arc.erase(it);
 
 		adjust_count++;
 	}
 
-	if (adjust_count != adjust_num)adjust_num = 0;
+	//if (adjust_count != adjust_num)adjust_num = 0;
 
-	random_rule_add_tunnel(net_index, sink_index, adjust_count, actual_adjust, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
+	random_rule_add_tunnel_2(net_index, sink_index, adjust_count, actual_adjust, temp_fpga_weight, temp_delta_weight_matrix, temp_added_arc_record);
 
 	//cout << "---------------------phase 2: change completed---------------------" << endl;
 
 
-	int total_add = numAddedTunnel + added_count - adjust_num + actual_adjust;
+	//int total_add = numAddedTunnel + added_count - adjust_num + actual_adjust;
+	int total_add = numAddedTunnel + added_count - adjust_count + actual_adjust;
+
 	if (total_add > (numTunnel * 0.3))
 	{
 		cout << "add tunnel exceed max! actual: " << total_add << " ,max: " << (numTunnel * 0.3);
@@ -3206,14 +3746,19 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 			for (int y = 0; y < numFPGA + 1; y++)
 				delta_weight_matrix[x][y] = temp_delta_weight_matrix[x][y];
 		}
-		numAddedTunnel = numAddedTunnel + added_count - adjust_num + actual_adjust;
+		numAddedTunnel = numAddedTunnel + added_count - adjust_count + actual_adjust;
 
 		added_arc_record.clear();
 		for (auto each : temp_added_arc_record)
 			added_arc_record.push_back(each);
 		calculate_su(Current);
 	}
-
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+	}
 
 
 	//bool c = check_result(Current);
@@ -3230,24 +3775,29 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 
 	if (new_obj < Global_delay && abs(new_obj - Global_delay)>1e-3)
 	{
-		cout << "Global improved in N3: " << "from " << Global_delay << " to " << new_obj << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << endl;
+		cout << "Global improved in N3: " << "from " << Global_delay << " to " << new_obj << " time: " << (clock() - beginTime) / CLOCKS_PER_SEC << " no-improve: " << nonImproved << " " << T << endl;
 		copy_solution(Global, Current, global_delta_weight_matrix, delta_weight_matrix);
 		std::copy(net_delay, net_delay + numNet, Global_net_delay);
 		Global_delay = new_obj;
-
 		bestTime = (clock() - beginTime) / CLOCKS_PER_SEC;
 		//***********************************************************//
-		//ofstream allout(nameFinalResult, ios::out | ios::app);
-		//if (allout.is_open())
-		//{
-		//	allout << 0 << " " << Global_delay << " " << bestTime << " " << T << endl;
-		//	allout.close();
-		//}
+		ofstream allout(nameFinalResult, ios::out | ios::app);
+		if (allout.is_open())
+		{
+			allout << 0 << " " << Global_delay << " " << bestTime << " " << maxnoImproved << endl;
+			allout.close();
+		}
 		//***********************************************************//
+		nonImproved = 0;
 		//bool check = check_result(Global, global_delta_weight_matrix);
 		//if (!check) exit(-1);
 	}
-
+	else
+	{
+		nonImproved++;
+		if (nonImproved > maxnoImproved)
+			maxnoImproved = nonImproved;
+	}
 
 	/*check_result(Global);*/
 
@@ -3259,6 +3809,65 @@ void add_tunnel(int net_index, int sink_index) //邻域3
 }
 
 
+void perturb_solution()
+{
+	cout << "Trigger perturb: \n";
+
+
+	// 随机选择一些net重新布线
+	int num_perturb_nets = SDF_MAX(1, numNet * 0.5);  // 扰动10%的net
+	for (int i = 0; i < num_perturb_nets; i++) {
+		int net_idx = rand() % numNet;
+		if (Current[net_idx].sink_num == 0) continue;
+
+		for (auto& p : Current[net_idx].path_map)
+		{
+			auto arc = p.first;
+			int a = arc.first; int b = arc.second;
+			nets_count_matrix[a][b]--;
+			nets_count_matrix[b][a]--;
+		}
+		Current[net_idx].path_map.clear();
+
+		// 为该net重新计算路径
+		vector<vector<pair<int, int>>> new_paths;
+		multi_dijkstra(Current[net_idx].source_node, Current[net_idx].sink_nodes, new_paths);
+		Current[net_idx].path = new_paths;
+
+		// 更新累计使用次数
+		auto& net = Current[net_idx];
+		pair<int, int> arc = {};
+		for (auto& edges : net.path)
+		{
+			for (auto& e : edges)
+			{
+				int u = e.first, v = e.second;
+				if (u > v)
+					arc = { v,u };
+				else
+					arc = { u, v };
+				if (net.path_map.find(arc) != net.path_map.end()) //找到边
+					net.path_map[arc]++;
+				else if (net.path_map.find(arc) == net.path_map.end()) //未找到边
+					net.path_map[arc] = 1;
+			}
+		}
+		for (auto& p : net.path_map)
+		{
+			int a = p.first.first, b = p.first.second;
+			++nets_count_matrix[a][b];
+			++nets_count_matrix[b][a];
+		}
+
+	}
+
+	calculate_su(Current);
+
+	//bool check = check_result(Current, delta_weight_matrix);
+	//if (!check)
+	//	exit(-1);
+}
+
 void optimize_with_beam_search()
 {
 	//初始化函数
@@ -3266,31 +3875,52 @@ void optimize_with_beam_search()
 
 	//迭代运行优化函数
 	//主循环
-	int iter = 0;
+	int n = TRMPLAYER;
+	int k = 0;
+	int c = 1;
+	double Tem = T;
 	while (((clock() - beginTime) / CLOCKS_PER_SEC) < maxRunTime)
 	{
-		for (int i = 0; i < 10; i++)
+		for (int i = 0; i < n; i++)
 		{
 			if (((clock() - beginTime) / CLOCKS_PER_SEC) > maxRunTime) break;
 			int net_index = -1, sink_index = -1;
 			choose_worst_path_2(Current, net_index, sink_index);
 
 			int neighbor_choose = rand() % 3;
-			//double n_search_begin = clock();
+			// int neighbor_choose =  1;
+			double n_search_begin = clock();
 			switch (neighbor_choose)
 			{
-			case(0): { re_route_path(net_index, sink_index);   break; }//邻域1 cout <<i<< " N1: ";
-			case(1): { neighbor_replan2(net_index, sink_index);  break; }//邻域2 cout<< i << " N2: ";
+			case(0): { re_route_path(net_index, sink_index);    break; }//邻域1 cout <<i<< " N1: ";
+			case(1): { neighbor_replan2_test(net_index, sink_index);  break; }//邻域2 cout<< i << " N2: ";
 			case(2): { add_tunnel(net_index, sink_index);  break; }//邻域3 cout <<i<< " N3: ";
 			default:break;
 			}
+
 			//cout << (clock() - n_search_begin) / CLOCKS_PER_SEC << endl;
+
+			//cout << "Temperature: " << T << endl;
+			//cout << "no improve " << nonImproved << endl;
+
 			//cout << "outer check: \n";
 			//bool check = check_result(Global, global_delta_weight_matrix);
 			//if (!check) exit(-1);
 		}
-		T = T * 0.9;
-		if (T <= 1) break;
+		k++;
+		//T = T0 - k*(T0 / 100);
+		T = 0.98 * T;
+		//T = Tem /(k+c);
+		//T = Tem / (1 + (2 * log(1 + k)));
+		//cout << nonImproved << endl;
+		if (nonImproved >= 3*n)//&& T < 0.2*T0
+		{
+			cout << k << " ";
+			perturb_solution();
+			nonImproved = 0;
+		}
+
+		if (T <=1e-3) break;
 	}
 
 
@@ -3318,37 +3948,36 @@ int main(int argc, char** argv)
 	}
 
 	//***********************************************************//
-/*  strcpy(name_final_result, instanceName);
-  strcat(name_final_result, rep);*/
-	//strcpy(cutname, caseName);
-	//char* temp = strtok(cutname, "/");
-	//temp = strtok(NULL, "/");
-	//strcpy(nameFinalResult, "../Sol/");
-	//strcat(nameFinalResult, temp);
-	//strcat(nameFinalResult, "_");
-	//strcat(nameFinalResult, rep);
+	strcpy(cutname, caseName);
+	char* temp = strtok(cutname, "/");
+	strcpy(nameFinalResult, "../Sol/");
+	strcat(nameFinalResult, temp);
+	strcat(nameFinalResult, "_");
+	strcat(nameFinalResult, rep);
 
-	//strcpy(outRoute, "../instances/");
-	//strcat(outRoute, temp);
-	//strcat(outRoute, "/");
-	//strcat(outRoute, rep);
-	//strcat(outRoute, "_");
+	strcpy(outRoute, "../instances/");
+	strcat(outRoute, temp);
+	strcat(outRoute, "/");
+	strcat(outRoute, rep);
+	strcat(outRoute, "_");
 
-	//strcpy(outTopo, "../instances/");
-	//strcat(outTopo, temp);
-	//strcat(outTopo, "/");
-	//strcat(outTopo, rep);
-	//strcat(outTopo, "_");
+	strcpy(outTopo, "../instances/");
+	strcat(outTopo, temp);
+	strcat(outTopo, "/");
+	strcat(outTopo, rep);
+	strcat(outTopo, "_");
 	//***********************************************************//
 
 	srand(seed);
+	nonImproved = 0;
+	maxnoImproved = -1;
 	beginTime = clock();
 	bestTime = 0.0;
 	// 读取实例
 	read_instance();
 
 	// 运行时间限制
-	maxRunTime = 600;
+	maxRunTime = 3600;
 
 	//运行主算法
 	optimize_with_beam_search();
