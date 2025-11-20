@@ -104,9 +104,17 @@ int main(){
     int k=2;
     topk_asc_vector(s,address,k);
     
-    for(auto x:address){
-        cout<<x<<' ';
-    }
+    // for(auto x:address){
+    //     cout<<x<<' ';
+    // }
+    vector<double> topk_check_delay;
+    // topk_check_delay.resize(2);
+    topk_check_delay.push_back(1.2);
+    topk_check_delay.push_back(1.2);
+    topk_check_delay.resize(1);
+    cout<<topk_check_delay.size()<<' ';
+    cout<<topk_check_delay[0]<<endl;
+
     return 0;
 
 }

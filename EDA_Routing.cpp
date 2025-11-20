@@ -30,7 +30,7 @@ using namespace std;
 #define SDF_MIN(a,b) ((a)<(b)?(a):(b))
 
 #define BEAMWIDTH 3//邻域1参数
-#define RATIO 0.2  // 邻域1 topk的保留范围
+#define RATIO 0.1  // 邻域1 topk的保留范围
 #define Max_kdepth 5//邻域1参数
 #define SHORTESTROB 0.8//邻域2参数
 #define ADJUSTRATIO 0.5//邻域3参数
